@@ -94,6 +94,7 @@ instability from the harvesting terms.
 - NumPy
 - Matplotlib
 - SciPy
+- Plotly (optional — interactive 3D surfaces; static matplotlib fallbacks are shown if missing)
 
 ## Generated Figures
 
@@ -116,6 +117,11 @@ The notebook saves the following PNG files (200 dpi):
 | `step3c_catch_B.png` | Catch rate & cumulative catch — Scenario B |
 | `step3c_catch_C.png` | Catch rate & cumulative catch — Scenario C |
 | `step3c_catch_D.png` | Catch rate & cumulative catch — Scenario D |
+
+Additional plots displayed **inline only** (not saved to disk):
+- **3D surface plots** of fish density `u(s,t)` for each scenario (A–D)
+- **Heatmaps** of fish density `u(s,t)` for each scenario (A–D), with the
+  200-mile policy boundary marked
 
 ## Project Files
 
