@@ -16,6 +16,7 @@ top-to-bottom (`Restart & Run All`) with no external data files.
 | **2** | Logistic growth + fishing | `dx/dt = r x (1 - x/K) - h x` |
 | **3A** | Pure diffusion (spatial sanity check) | `u_t = D u_ss` |
 | **3B** | Reaction–diffusion (growth + migration) | `u_t = r u (1 - u/K) + D u_ss` |
+| **3C** | Reaction–diffusion + fishing policy | `u_t = r u (1 - u/K) - h(s,t) u + D u_ss` |
 
 Each section validates against known solutions before adding complexity.
 
@@ -43,6 +44,28 @@ Each section validates against known solutions before adding complexity.
 - Part B: uniform IC validation — confirms PDE reduces to logistic ODE when
   spatially homogeneous (max spatial deviation ~ machine epsilon)
 
+**3C — Reaction–Diffusion with Fishing Policy (200-Mile Boundary)**
+- Introduces spatially varying harvesting `h(s,t)`: fishing intensity differs
+  inside (`s <= 200`) vs outside (`s > 200`) a 200-mile economic zone
+- Four policy scenarios are compared:
+
+| Scenario | h_in | h_out | Description |
+|----------|------|-------|-------------|
+| **A** | 0.0 | 0.0 | No fishing (baseline, identical to 3B) |
+| **B** | 0.2 | 0.2 | Uniform fishing everywhere |
+| **C** | 0.0 | 0.2 | 200-mile ban: inshore protected, offshore fished |
+| **D** | 0.0 | 0.2 + pulse | Same as C, but with an intense offshore pulse (`h=0.8` for `t in [20,25]`) |
+
+- **Key results:**
+  - **A:** Growth fills domain to K (no harvesting pressure)
+  - **B:** Uniform fishing depresses equilibrium below K everywhere
+  - **C:** Inshore reaches K, offshore is depressed; diffusion creates a
+    **spillover gradient** from protected to fished zones
+  - **D:** Intense pulse causes a transient biomass crash, followed by partial
+    recovery once the pulse ends
+- Tracks inshore biomass, offshore biomass, total biomass, instantaneous catch
+  rate, and cumulative catch for each scenario
+
 ## Spatial Domain
 
 The 1D coordinate `s` represents **offshore distance**:
@@ -58,10 +81,12 @@ at the boundaries.
 | Method | Where used |
 |--------|-----------|
 | RK45 (adaptive Runge–Kutta) | Sections 1, 2 (ODEs via `scipy.integrate.solve_ivp`) |
-| Explicit Euler + finite differences | Sections 3A, 3B (PDEs) |
+| Explicit Euler + finite differences | Sections 3A, 3B, 3C (PDEs) |
 
 The explicit Euler PDE solver uses the diffusion stability condition
-`dt <= ds^2 / (2D)` with a safety factor of 0.45.
+`dt <= ds^2 / (2D)` with a safety factor of 0.45. Section 3C adds an
+additional dt constraint based on the maximum reaction rate to prevent
+instability from the harvesting terms.
 
 ## Dependencies
 
@@ -79,14 +104,22 @@ The notebook saves the following PNG files (200 dpi):
 | `step1_logistic_quick_view.png` | Quick-look logistic growth curve |
 | `step1_logistic_x0_comparison.png` | Multiple initial conditions (numeric vs analytic) |
 | `step1_logistic_r_sweep.png` | Growth-rate sweep comparison |
-
-Additional plots are displayed inline but not saved to disk.
+| `step3c_snapshots_A.png` | Density snapshots — Scenario A (no fishing) |
+| `step3c_snapshots_B.png` | Density snapshots — Scenario B (uniform fishing) |
+| `step3c_snapshots_C.png` | Density snapshots — Scenario C (200-mile ban) |
+| `step3c_snapshots_D.png` | Density snapshots — Scenario D (ban + pulse) |
+| `step3c_biomass_A.png` | Biomass time series — Scenario A |
+| `step3c_biomass_B.png` | Biomass time series — Scenario B |
+| `step3c_biomass_C.png` | Biomass time series — Scenario C |
+| `step3c_biomass_D.png` | Biomass time series — Scenario D |
+| `step3c_catch_A.png` | Catch rate & cumulative catch — Scenario A |
+| `step3c_catch_B.png` | Catch rate & cumulative catch — Scenario B |
+| `step3c_catch_C.png` | Catch rate & cumulative catch — Scenario C |
+| `step3c_catch_D.png` | Catch rate & cumulative catch — Scenario D |
 
 ## Project Files
 
 ```
-visualsv3.ipynb          Main notebook (current)
-visuals.ipynb            Earlier version (v1)
-visualsv2.ipynb          Earlier version (v2)
+visualsv3.ipynb          Main notebook
 README.md                This file
 ```
