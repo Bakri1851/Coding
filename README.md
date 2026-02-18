@@ -136,7 +136,7 @@ Validate the spatial finite-difference discretisation and boundary treatment
 **in isolation** before adding reaction or fishing terms. The expected
 behaviour is:
 
-1. An initial Gaussian bump spreads and flattens.
+1. An initial Gaussian bump (centred at $s = 150$) spreads and flattens.
 2. Total mass $M(t) = \int_0^L u\,ds$ is conserved (no flux out, no reaction).
 
 ### Spatial Grid and Parameters
@@ -148,7 +148,7 @@ behaviour is:
 | Grid spacing $\Delta s$ | $L/(N-1) = 2.0$ |
 | Diffusion coefficient $D$ | 10.0 |
 | End time $T$ | 20.0 |
-| Initial condition | $u_0(s) = \exp\!\bigl(-(s/50)^2\bigr)$ |
+| Initial condition | $u_0(s) = \exp\!\bigl(-((s - 150)/50)^2\bigr)$ (peak at $s = 150$) |
 
 ### Finite-Difference Laplacian
 
@@ -205,11 +205,12 @@ Same domain, grid, boundary conditions, and numerical method as 3A.
 
 #### Part A — Non-uniform Initial Condition (Gaussian Bump)
 
-$u_0(s) = \exp\!\bigl(-(s/50)^2\bigr)$
+$u_0(s) = \exp\!\bigl(-((s - 150)/50)^2\bigr)$
 
-**Behaviour:** The bump initially has high density near the coast and near-zero
-density far offshore. Logistic growth fills the low-density tails while
-diffusion smooths spatial gradients. The profile converges uniformly to $K$.
+**Behaviour:** The bump peaks at $s = 150$ (mid-inshore), with density falling
+off toward both the coastline and far offshore. Logistic growth fills the
+low-density tails while diffusion smooths spatial gradients. The profile
+converges uniformly to $K$.
 
 Snapshots are shown at $t = 0, 10, 20, 40, 60$.
 
