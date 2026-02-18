@@ -7,8 +7,10 @@ against known solutions or limiting cases before the next layer is added.
 
 ## Notebook
 
-The primary notebook is **`visualsv3.ipynb`**. It is designed to run
-top-to-bottom (`Restart & Run All`) with no external data files.
+The primary notebook is **`visualsv3.ipynb`**. It imports model, solver,
+validation, and plotting functions from the companion Python modules
+(`ode_models.py`, `pde_solver.py`, `validation.py`, `plotting.py`).
+Run top-to-bottom (`Restart & Run All`) with no external data files.
 
 ---
 
@@ -373,6 +375,12 @@ prevent instability from harvesting terms.
 ## Project Files
 
 ```
-visualsv3.ipynb          Main notebook
+visualsv3.ipynb          Main notebook (orchestration + visualisation)
+ode_models.py            Logistic & harvested ODE functions
+pde_solver.py            Spatial discretisation & reaction-diffusion PDE solver
+validation.py            Numerical validation utilities
+plotting.py              All reusable plotting functions
+requirements.txt         Python dependencies
 README.md                This file
+.gitignore               Git ignore rules
 ```
