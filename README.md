@@ -246,7 +246,25 @@ h_{\mathrm{out}} & s > 200
 \end{cases}
 $$
 
-with an optional time-limited **pulse** that temporarily raises $h_{\mathrm{out}}$.
+### Harvest Rate Calibration via MSY / MEY
+
+Rather than choosing arbitrary harvest rates, we derive them from fisheries
+economics. The **Maximum Sustainable Yield** for the logistic model is:
+
+$$
+\mathrm{MSY} = \frac{Kr}{4}, \qquad h_{\mathrm{MSY}} = \frac{r}{2}
+$$
+
+Fishing at MSY leaves no economic safety margin, so we target the **Maximum
+Economic Yield (MEY)**, taken as a random fraction $f \in [0.80,\, 0.90]$ of
+MSY. The corresponding per-capita harvest rate is:
+
+$$
+h_{\mathrm{MEY}} = \frac{r}{2}\left(1 - \sqrt{1 - f}\right)
+$$
+
+With $K = 1.0$, $r = 0.5$: $h_{\mathrm{MSY}} = 0.25$,
+$h_{\mathrm{MEY}} \approx 0.138\text{–}0.171$ depending on the draw.
 
 ### Parameters
 
@@ -258,23 +276,22 @@ with an optional time-limited **pulse** that temporarily raises $h_{\mathrm{out}
 
 ### Additional Stability Constraint
 
-Because the harvesting term can be stiff (especially during a pulse), an
-additional time-step restriction is imposed:
+Because the harvesting term can be stiff, an additional time-step restriction
+is imposed:
 
 $$
-\Delta t \le \frac{0.2}{\max(r,\, h_{\mathrm{in}},\, h_{\mathrm{out}},\, h_{\mathrm{pulse}})}
+\Delta t \le \frac{0.2}{\max(r,\, h_{\mathrm{in}},\, h_{\mathrm{out}})}
 $$
 
 The actual $\Delta t$ is the minimum of this and the diffusion stability limit.
 
-### Four Policy Scenarios
+### Three Policy Scenarios
 
-| Scenario | $h_{\mathrm{in}}$ | $h_{\mathrm{out}}$ | Pulse | Description |
-|----------|-------------------|---------------------|-------|-------------|
-| **A** | 0.0 | 0.0 | — | No fishing (baseline, identical to 3B) |
-| **B** | 0.2 | 0.2 | — | Uniform fishing everywhere |
-| **C** | 0.0 | 0.2 | — | 200-mile ban: inshore protected, offshore fished |
-| **D** | 0.0 | 0.2 | $h_{\mathrm{out}}=0.8$ for $t \in [20, 25]$ | Same as C + intense offshore pulse |
+| Scenario | $h_{\mathrm{in}}$ | $h_{\mathrm{out}}$ | Description |
+|----------|-------------------|---------------------|-------------|
+| **A** | 0.0 | 0.0 | No fishing (baseline, identical to 3B) |
+| **B** | $h_{\mathrm{MEY}}$ | $h_{\mathrm{MEY}}$ | Uniform MEY fishing everywhere |
+| **C** | 0.0 | $h_{\mathrm{MEY}}$ | 200-mile ban: inshore protected, MEY offshore |
 
 ### Key Results
 
@@ -282,26 +299,20 @@ The actual $\Delta t$ is the minimum of this and the diffusion stability limit.
 Growth fills the domain to $K$ from the initial Gaussian bump, identical to 3B.
 Total biomass increases monotonically.
 
-**Scenario B (Uniform Fishing):**
-The fishing rate $h = 0.2 < r = 0.5$ depresses the equilibrium below $K$
-everywhere. The effective carrying capacity is $K(1 - h/r) = 0.6$, which the
-solution converges to uniformly.
+**Scenario B (Uniform MEY Fishing):**
+The MEY harvest rate $h_{\mathrm{MEY}} < r$ depresses the equilibrium below $K$
+everywhere. The effective carrying capacity is
+$K(1 - h_{\mathrm{MEY}}/r)$, which the solution converges to uniformly. This
+sustains near-optimal long-term yield while maintaining a safety margin below
+MSY.
 
-**Scenario C (200-Mile Ban):**
+**Scenario C (200-Mile Ban + MEY Offshore):**
 The inshore zone ($s \le 200$) is protected and reaches $K$. The offshore zone
-is harvested and converges to a lower equilibrium. Near the boundary, diffusion
-creates a **spillover gradient**: fish migrate from the high-density protected
-zone into the fished zone, partially replenishing offshore biomass. This
-demonstrates how marine protected areas can sustain adjacent fisheries.
-
-**Scenario D (200-Mile Ban + Offshore Pulse):**
-Between $t = 20$ and $t = 25$, the offshore fishing rate spikes to
-$h_{\mathrm{out}} = 0.8 > r = 0.5$, which exceeds the growth rate and causes a
-**transient biomass crash** in the offshore zone. Once the pulse ends, the
-standard $h_{\mathrm{out}} = 0.2$ resumes and offshore biomass partially
-recovers, aided by diffusive spillover from the protected inshore zone. The
-cumulative catch curve shows a spike during the pulse followed by reduced catch
-as the depleted stock recovers.
+is harvested at the MEY rate and converges to a lower equilibrium. Near the
+boundary, diffusion creates a **spillover gradient**: fish migrate from the
+high-density protected zone into the fished zone, partially replenishing
+offshore biomass. This demonstrates how marine protected areas can sustain
+adjacent fisheries.
 
 ### Diagnostics Tracked Per Scenario
 
