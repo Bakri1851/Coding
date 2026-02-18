@@ -228,7 +228,7 @@ confirming the discretisation introduces no spurious spatial gradients.
 
 ---
 
-## 3C — Reaction-Diffusion with Fishing Policy (200-Mile Boundary)
+## 3C — Reaction-Diffusion with Fishing Policy (200-Mile EEZ Boundary)
 
 ### Governing Equation
 
@@ -236,13 +236,13 @@ $$
 \frac{\partial u}{\partial t} = r\,u\!\left(1 - \frac{u}{K}\right) - h(s,t)\,u + D\,\frac{\partial^2 u}{\partial s^2}
 $$
 
-The fishing rate is **piecewise constant** across a 200-mile economic-zone
-boundary:
+The fishing rate is **piecewise constant** across the 200-mile Exclusive
+Economic Zone (EEZ) boundary:
 
 $$
 h(s,t) = \begin{cases}
-h_{\mathrm{in}}  & s \le 200 \\[4pt]
-h_{\mathrm{out}} & s > 200
+h_{\mathrm{in}}  & s \le 200 \quad \text{(EEZ — regulated)} \\[4pt]
+h_{\mathrm{out}} & s > 200 \quad \text{(international waters — unregulated)}
 \end{cases}
 $$
 
@@ -255,9 +255,9 @@ $$
 \mathrm{MSY} = \frac{Kr}{4}, \qquad h_{\mathrm{MSY}} = \frac{r}{2}
 $$
 
-Fishing at MSY leaves no economic safety margin, so we target the **Maximum
-Economic Yield (MEY)**, taken as a random fraction $f \in [0.80,\, 0.90]$ of
-MSY. The corresponding per-capita harvest rate is:
+Inside the EEZ, fishing is managed at the **Maximum Economic Yield (MEY)**,
+taken as a random fraction $f \in [0.80,\, 0.90]$ of MSY. The corresponding
+per-capita harvest rate is:
 
 $$
 h_{\mathrm{MEY}} = \frac{r}{2}\left(1 - \sqrt{1 - f}\right)
@@ -266,12 +266,15 @@ $$
 With $K = 1.0$, $r = 0.5$: $h_{\mathrm{MSY}} = 0.25$,
 $h_{\mathrm{MEY}} \approx 0.138\text{–}0.171$ depending on the draw.
 
+Outside the EEZ (international waters), fishing is unregulated and occurs at
+the MSY rate $h_{\mathrm{MSY}} = r/2$.
+
 ### Parameters
 
 | Parameter | Value |
 |-----------|-------|
 | $L, N, D, r, K$ | Same as 3B |
-| $s_{\mathrm{boundary}}$ | 200 |
+| $s_{\mathrm{boundary}}$ | 200 (EEZ limit) |
 | $T$ | 60.0 |
 
 ### Additional Stability Constraint
@@ -287,11 +290,11 @@ The actual $\Delta t$ is the minimum of this and the diffusion stability limit.
 
 ### Three Policy Scenarios
 
-| Scenario | $h_{\mathrm{in}}$ | $h_{\mathrm{out}}$ | Description |
-|----------|-------------------|---------------------|-------------|
+| Scenario | $h_{\mathrm{in}}$ (EEZ) | $h_{\mathrm{out}}$ (international) | Description |
+|----------|--------------------------|--------------------------------------|-------------|
 | **A** | 0.0 | 0.0 | No fishing (baseline, identical to 3B) |
 | **B** | $h_{\mathrm{MEY}}$ | $h_{\mathrm{MEY}}$ | Uniform MEY fishing everywhere |
-| **C** | 0.0 | $h_{\mathrm{MEY}}$ | 200-mile ban: inshore protected, MEY offshore |
+| **C** | $h_{\mathrm{MEY}}$ | $h_{\mathrm{MSY}}$ | EEZ managed at MEY, international waters fished at MSY |
 
 ### Key Results
 
@@ -306,13 +309,14 @@ $K(1 - h_{\mathrm{MEY}}/r)$, which the solution converges to uniformly. This
 sustains near-optimal long-term yield while maintaining a safety margin below
 MSY.
 
-**Scenario C (200-Mile Ban + MEY Offshore):**
-The inshore zone ($s \le 200$) is protected and reaches $K$. The offshore zone
-is harvested at the MEY rate and converges to a lower equilibrium. Near the
-boundary, diffusion creates a **spillover gradient**: fish migrate from the
-high-density protected zone into the fished zone, partially replenishing
-offshore biomass. This demonstrates how marine protected areas can sustain
-adjacent fisheries.
+**Scenario C (EEZ at MEY, International at MSY):**
+The EEZ ($s \le 200$) is managed at MEY and converges to the equilibrium
+$K(1 - h_{\mathrm{MEY}}/r)$. International waters ($s > 200$) are fished harder
+at MSY and converge to the lower equilibrium $K/2$. Near the boundary, diffusion
+creates a **spillover gradient**: fish migrate from the higher-density EEZ into
+the more depleted international zone, partially replenishing offshore biomass.
+This demonstrates how managed EEZ fishing at MEY sustains both the domestic
+stock and adjacent international fisheries through diffusive spillover.
 
 ### Diagnostics Tracked Per Scenario
 
