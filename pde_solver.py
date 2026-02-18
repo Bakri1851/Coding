@@ -41,6 +41,8 @@ def simulate_rd_fishing(
     dt_safety: float = 0.45,
     store_full: bool = False,
     full_n_frames: int = 300,
+    h_in_schedule: np.ndarray | None = None,
+    h_out_schedule: np.ndarray | None = None,
 ) -> dict:
     """Simulate reaction-diffusion PDE with spatially varying fishing.
 
@@ -51,6 +53,7 @@ def simulate_rd_fishing(
     T_end         : simulation end time
     s_boundary    : policy boundary (inshore/offshore split)
     h_in, h_out   : fishing rates for s <= s_boundary and s > s_boundary
+                    (used as constants when schedules are not provided)
     pulse         : optional dict with keys "t_start", "t_end", "h_out_pulse"
     u0_type       : "gaussian" or "uniform"
     u0_uniform    : initial value if u0_type == "uniform" (default 0.2*K)
@@ -58,11 +61,16 @@ def simulate_rd_fishing(
     gaussian_scale: width parameter for Gaussian IC
     snapshot_times: list of times at which to store spatial snapshots
     dt_safety     : safety factor for diffusion stability
+    h_in_schedule : shape (n_years,) array of annual inshore harvest rates;
+                    overrides h_in when provided (year = floor(t))
+    h_out_schedule: shape (n_years,) array of annual offshore harvest rates;
+                    overrides h_out when provided (year = floor(t))
 
     Returns
     -------
     dict with keys: s, time, snapshots, B_in, B_out, B_tot, Catch,
-                    CumCatch, ds, dt, nt, min_u, s_boundary
+                    CumCatch, ds, dt, nt, min_u, s_boundary,
+                    h_in_schedule, h_out_schedule
                     (+ u_full, t_full when store_full=True)
     """
     if snapshot_times is None:
@@ -74,7 +82,9 @@ def simulate_rd_fishing(
     # -- dt: diffusion stability AND reaction/fishing safety -------------
     dt = dt_safety * ds**2 / (2.0 * D)
     h_pulse_val = pulse["h_out_pulse"] if pulse else 0.0
-    max_rate = max(r, h_in, h_out, h_pulse_val, 1e-12)
+    h_in_max  = float(np.max(h_in_schedule))  if h_in_schedule  is not None else h_in
+    h_out_max = float(np.max(h_out_schedule)) if h_out_schedule is not None else h_out
+    max_rate = max(r, h_in_max, h_out_max, h_pulse_val, 1e-12)
     dt = min(dt, 0.2 / max_rate)
     nt = int(np.ceil(T_end / dt))
     dt = T_end / nt
@@ -129,8 +139,14 @@ def simulate_rd_fishing(
     for n in range(1, nt + 1):
         t_now = n * dt
 
-        # fishing rate at this time (apply pulse if active)
-        if pulse and pulse["t_start"] <= t_now <= pulse["t_end"]:
+        # fishing rate at this time
+        if h_in_schedule is not None:
+            # annual stochastic schedule: look up current year
+            year = min(int(t_now), len(h_in_schedule) - 1)
+            h_arr = np.empty(N)
+            h_arr[: i_bnd + 1] = h_in_schedule[year]
+            h_arr[i_bnd + 1 :] = h_out_schedule[year]
+        elif pulse and pulse["t_start"] <= t_now <= pulse["t_end"]:
             h_arr = h_base.copy()
             h_arr[i_bnd + 1 :] = pulse["h_out_pulse"]
         else:
@@ -180,6 +196,8 @@ def simulate_rd_fishing(
         "nt": nt,
         "min_u": min_u,
         "s_boundary": s_boundary,
+        "h_in_schedule": h_in_schedule,
+        "h_out_schedule": h_out_schedule,
     }
 
     if store_full:
