@@ -33,15 +33,15 @@ def plot_initial_condition_comparison(
     for x0 in x0_list:
         x_num = logistic_numeric(t_eval=t_eval, r=r, K=K, x0=x0)
         x_an = logistic_analytic(t=t_eval, r=r, K=K, x0=x0)
-        ax.plot(t_eval, x_num, linewidth=2.0, label=f"RK45, x0={x0:.1f}")
-        ax.plot(t_eval, x_an, "--", linewidth=1.2, label=f"Analytic, x0={x0:.1f}")
+        ax.plot(t_eval, x_num, linewidth=2.0, label=f"RK45, x\u0303\u2080={x0:.3f}")
+        ax.plot(t_eval, x_an, "--", linewidth=1.2, label=f"Analytic, x\u0303\u2080={x0:.3f}")
 
-    ax.axhline(0.0, color="black", linestyle=":", linewidth=1.2, label="Equilibrium x=0")
-    ax.axhline(K, color="gray", linestyle="-.", linewidth=1.2, label=f"Equilibrium x=K={K:g}")
+    ax.axhline(0.0, color="black", linestyle=":", linewidth=1.2, label="x\u0303*=0")
+    ax.axhline(K, color="gray", linestyle="-.", linewidth=1.2, label="x\u0303*=1")
 
-    ax.set_title("Logistic Growth: Multiple Initial Conditions")
-    ax.set_xlabel("Time t")
-    ax.set_ylabel("Population x(t)")
+    ax.set_title("Logistic Growth (ND): Multiple Initial Conditions x\u0303\u2080")
+    ax.set_xlabel("Dimensionless time \u03c4")
+    ax.set_ylabel("Dimensionless population x\u0303(\u03c4)")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9, ncol=2)
 
@@ -62,10 +62,10 @@ def plot_r_sweep(
         x_num = logistic_numeric(t_eval=t_eval, r=r, K=K, x0=x0)
         ax.plot(t_eval, x_num, linewidth=2.0, label=f"r={r:.2f}")
 
-    ax.axhline(K, color="gray", linestyle="-.", linewidth=1.2, label=f"K={K:g}")
-    ax.set_title(f"Logistic Growth Speed for Different r (x0={x0:.1f})")
-    ax.set_xlabel("Time t")
-    ax.set_ylabel("Population x(t)")
+    ax.axhline(K, color="gray", linestyle="-.", linewidth=1.2, label="x\u0303*=1")
+    ax.set_title(f"Logistic Growth (ND): r-sweep (x\u0303\u2080={x0:.3f})")
+    ax.set_xlabel("Dimensionless time \u03c4")
+    ax.set_ylabel("Dimensionless population x\u0303(\u03c4)")
     ax.grid(True, alpha=0.3)
     ax.legend()
 
@@ -82,23 +82,23 @@ def plot_snapshots(res: dict, title: str, K: float | None = None) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 6))
     for t_snap in sorted(res["snapshots"]):
         u_snap = res["snapshots"][t_snap]
-        line, = ax.plot(res["s"], u_snap, linewidth=2.0, label=f"t = {t_snap:g}")
+        line, = ax.plot(res["s"], u_snap, linewidth=2.0, label=f"\u03c4 = {t_snap:g}")
         # Mark the peak density location
         peak_idx = np.argmax(u_snap)
         s_peak = res["s"][peak_idx]
         u_peak = u_snap[peak_idx]
         ax.plot(s_peak, u_peak, "o", color=line.get_color(), markersize=8,
                 markeredgecolor="black", markeredgewidth=0.8)
-        ax.annotate(f"s={s_peak:.0f}", (s_peak, u_peak),
+        ax.annotate(f"\u03be={s_peak:.3f}", (s_peak, u_peak),
                     textcoords="offset points", xytext=(8, 6), fontsize=7.5,
                     color=line.get_color(), fontweight="bold")
     if K is not None:
-        ax.axhline(K, color="gray", linestyle="--", linewidth=1.2, label=f"K = {K:g}")
+        ax.axhline(K, color="gray", linestyle="--", linewidth=1.2, label=f"x* = {K:g}")
     ax.axvline(res["s_boundary"], color="red", linestyle=":", linewidth=1.2,
-               label=f"boundary = {res['s_boundary']:g}")
+               label=f"\u03be_bnd = {res['s_boundary']:.3f}")
     ax.set_title(f"Density Snapshots — {title}")
-    ax.set_xlabel("Offshore distance s")
-    ax.set_ylabel("Population density u(s, t)")
+    ax.set_xlabel("Dimensionless position \u03be")
+    ax.set_ylabel("Dimensionless density x(\u03be, \u03c4)")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=9)
     fig.tight_layout()
@@ -108,12 +108,12 @@ def plot_snapshots(res: dict, title: str, K: float | None = None) -> plt.Figure:
 def plot_biomass(res: dict, title: str) -> plt.Figure:
     """Biomass time-series plot for one scenario."""
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(res["time"], res["B_in"], linewidth=2.0, label="B_in (inshore)")
-    ax.plot(res["time"], res["B_out"], linewidth=2.0, label="B_out (offshore)")
+    ax.plot(res["time"], res["B_in"], linewidth=2.0, label="B_in (\u03be \u2264 \u03be_bnd)")
+    ax.plot(res["time"], res["B_out"], linewidth=2.0, label="B_out (\u03be > \u03be_bnd)")
     ax.plot(res["time"], res["B_tot"], linewidth=2.0, linestyle="--", label="B_tot (total)")
     ax.set_title(f"Biomass Time Series — {title}")
-    ax.set_xlabel("Time t")
-    ax.set_ylabel("Biomass (integrated density)")
+    ax.set_xlabel("Dimensionless time \u03c4")
+    ax.set_ylabel("Dimensionless biomass \u222bx d\u03be")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -126,15 +126,15 @@ def plot_catch(res: dict, title: str) -> plt.Figure:
 
     color_catch = "tab:blue"
     ax1.plot(res["time"], res["Catch"], linewidth=2.0, color=color_catch, label="Catch rate")
-    ax1.set_xlabel("Time t")
-    ax1.set_ylabel("Catch rate (density/time)", color=color_catch)
+    ax1.set_xlabel("Dimensionless time \u03c4")
+    ax1.set_ylabel("Dimensionless catch rate", color=color_catch)
     ax1.tick_params(axis="y", labelcolor=color_catch)
     ax1.grid(True, alpha=0.3)
 
     ax2 = ax1.twinx()
     color_cum = "tab:orange"
     ax2.plot(res["time"], res["CumCatch"], linewidth=2.0, color=color_cum, label="Cumulative catch")
-    ax2.set_ylabel("Cumulative catch", color=color_cum)
+    ax2.set_ylabel("Cumulative dimensionless catch", color=color_cum)
     ax2.tick_params(axis="y", labelcolor=color_cum)
 
     # Combined legend
@@ -193,9 +193,9 @@ def plot_3d_surface(
     peak_u = u_plot[np.arange(len(t_plot)), peak_idx]
     ax3d.plot(peak_s, t_plot, peak_u, color="red", linewidth=2.5, label="Peak density core")
     ax3d.legend(loc="upper left", fontsize=9)
-    ax3d.set_xlabel("Offshore distance s")
-    ax3d.set_ylabel("Time t")
-    ax3d.set_zlabel("Fish density u")
+    ax3d.set_xlabel("Dimensionless position \u03be")
+    ax3d.set_ylabel("Dimensionless time \u03c4")
+    ax3d.set_zlabel("Dimensionless density x")
     ax3d.set_title(f"3D Density Surface — {title}")
     ax3d.view_init(elev=25, azim=-50)
     fig.tight_layout()
@@ -228,7 +228,7 @@ def plot_3d_surface_plotly(
                 y=T_mesh,
                 z=u_plot,
                 colorscale="Viridis",
-                colorbar=dict(title="Fish density u(s, t)"),
+                colorbar=dict(title="Dimensionless density x(\u03be, \u03c4)"),
             ),
             go.Scatter3d(
                 x=peak_s, y=t_plot, z=peak_u,
@@ -241,9 +241,9 @@ def plot_3d_surface_plotly(
     fig.update_layout(
         title=f"3D Density Surface (Interactive) — {title}",
         scene=dict(
-            xaxis_title="Offshore distance s",
-            yaxis_title="Time t",
-            zaxis_title="Fish density u",
+            xaxis_title="Dimensionless position \u03be",
+            yaxis_title="Dimensionless time \u03c4",
+            zaxis_title="Dimensionless density x",
         ),
         margin=dict(l=0, r=0, b=0, t=50),
         width=1000,
@@ -267,17 +267,17 @@ def plot_heatmap(
     if s_boundary is not None:
         ax.axvline(
             s_boundary, color="red", linestyle="--", linewidth=1.5,
-            label=f"Policy boundary (s = {s_boundary:g})",
+            label=f"\u03be_boundary = {s_boundary:.3f}",
         )
     # Trace peak density location over time
     peak_s = s_arr[np.argmax(u_full, axis=1)]
     ax.plot(peak_s, t_arr, color="magenta", linewidth=2.0, linestyle="--",
             label="Peak density core")
-    ax.set_xlabel("Offshore distance s")
-    ax.set_ylabel("Time t")
+    ax.set_xlabel("Dimensionless position \u03be")
+    ax.set_ylabel("Dimensionless time \u03c4")
     ax.set_title(f"Density Heatmap — {title}")
     cb = fig.colorbar(pcm, ax=ax)
-    cb.set_label("Fish density u(s, t)")
+    cb.set_label("Dimensionless density x(\u03be, \u03c4)")
     ax.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
     return fig
