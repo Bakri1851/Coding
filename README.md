@@ -318,6 +318,10 @@ the more depleted international zone, partially replenishing offshore biomass.
 This demonstrates how managed EEZ fishing at MEY sustains both the domestic
 stock and adjacent international fisheries through diffusive spillover.
 
+An optional `pulse` dict (`{t_start, t_end, h_out_pulse}`) can override the
+offshore harvest rate for a specific time window, modelling a temporary
+episode of intense fishing pressure in international waters.
+
 ### Diagnostics Tracked Per Scenario
 
 | Quantity | Definition |
@@ -355,6 +359,57 @@ performance.
 
 ---
 
+## 3D — Stochastic Annual Harvest Schedules
+
+### Motivation
+
+Real fisheries management sets harvest rates year-by-year based on updated
+stock assessments. Harvest quotas are therefore not constant but fluctuate
+annually, reflecting both ecological variability and regulatory uncertainty.
+Section 3D extends the 3C framework by replacing fixed `h_in`/`h_out`
+constants with **pre-generated annual schedules**.
+
+### Implementation
+
+Two 1-D arrays are passed to `simulate_rd_fishing`:
+
+```
+h_in_schedule   shape (n_years,)   inshore  harvest rate for each year
+h_out_schedule  shape (n_years,)   offshore harvest rate for each year
+```
+
+During the time-stepping loop the active rates are looked up by integer year:
+
+```
+year = min(floor(t), n_years - 1)
+h_in_active  = h_in_schedule[year]
+h_out_active = h_out_schedule[year]
+```
+
+The schedules override the constant `h_in` / `h_out` values whenever provided.
+The result dict returns both schedule arrays for downstream inspection.
+
+### Stability
+
+The time-step safety check uses the **maximum rate across the full schedule**
+rather than the instantaneous rate, ensuring stability regardless of which
+year's quota is the largest:
+
+$$
+\Delta t \le \frac{0.2}{\max\!\bigl(r,\;\max(\mathbf{h}_{\mathrm{in}}),\;\max(\mathbf{h}_{\mathrm{out}})\bigr)}
+$$
+
+### Typical Usage
+
+Annual rates are drawn randomly before calling the solver — for example,
+MEY-fraction draws $f \sim \mathrm{Uniform}(0.80, 0.90)$ each year inside the
+EEZ, and MSY ($h = r/2$) with a random perturbation outside. Running multiple
+realisations of the schedule produces an ensemble that quantifies how
+year-to-year management variability propagates into long-run biomass and catch
+outcomes.
+
+---
+
 ## Spatial Domain
 
 The 1-D coordinate $s$ represents **offshore distance**:
@@ -377,6 +432,22 @@ equivalence in the finite-difference Laplacian.
 $\Delta t \le 0.45 \cdot \Delta s^2/(2D)$ for diffusion stability. Section 3C
 adds a reaction-rate constraint $\Delta t \le 0.2/\max(r, h_{\max})$ to
 prevent instability from harvesting terms.
+
+### `simulate_rd_fishing` Solver Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `h_in` / `h_out` | `0.0` / `0.2` | Constant inshore/offshore harvest rates |
+| `h_in_schedule` / `h_out_schedule` | `None` | Annual harvest-rate arrays `(n_years,)`; overrides constant rates when provided |
+| `pulse` | `None` | Dict `{t_start, t_end, h_out_pulse}` — temporary offshore fishing episode |
+| `store_full` | `False` | If `True`, save the full space-time field for 3D/heatmap plots |
+| `full_n_frames` | `300` | Maximum number of time frames stored when `store_full=True` |
+| `dt_safety` | `0.45` | Safety factor applied to the diffusion stability limit |
+| `u0_type` | `"gaussian"` | Initial condition type: `"gaussian"` or `"uniform"` |
+| `gaussian_center` | `150.0` | Offshore distance of the Gaussian IC peak |
+| `gaussian_scale` | `50.0` | Width parameter ($\sigma$) of the Gaussian IC |
+| `u0_uniform` | `0.2K` | Uniform IC value (used when `u0_type="uniform"`) |
+| `snapshot_times` | `[0,10,20,40,60]` | Times at which spatial snapshots are recorded |
 
 ## Dependencies
 
