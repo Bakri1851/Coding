@@ -2,17 +2,27 @@
 
 Numerical modelling of fish population dynamics, progressing from time-only ODEs
 to a **1D spatial** (offshore distance only) reaction-diffusion PDE with spatially
-varying harvesting, and finally to a **two-species Lotka-Volterra competition**
-model. Each section validates against known solutions before the next layer is added.
+varying harvesting, to a **two-species Lotka-Volterra competition** model, and
+finally to a **2D spatial** (offshore × alongshore) ocean map with periodic
+alongshore boundary conditions. Each section validates against known solutions
+before the next layer is added.
 
 All results are presented in **dimensionless form** (see
 [Non-Dimensionalisation](#non-dimensionalisation) below).
 
-## Notebook
+## Notebooks
 
-**`visualsv3.ipynb`** is the primary notebook. It imports from companion modules
-`ode_models.py`, `pde_solver.py`, `validation.py`, and `plotting.py`.
-Run top-to-bottom (`Restart & Run All`) — no external data files are required.
+| Notebook | Sections | Contents |
+|---|---|---|
+| `visualsv3.ipynb` | §1–6 | Combined — all sections in one place |
+| `01_ode_models.ipynb` | §1–2 | ODE models only |
+| `02_1d_pde.ipynb` | §3–4 | 1D PDE — single-species and two-species |
+| `03_2d_ocean.ipynb` | §5–6 | 2D ocean models (self-contained) |
+
+Each notebook runs top-to-bottom (`Restart & Run All`). No external data files
+are required. The companion modules (`ode_models.py`, `pde_solver.py`,
+`validation.py`, `plotting.py`) must reside in the same directory; §5–6 use
+only NumPy and Matplotlib and have no external module dependencies.
 
 ---
 
@@ -27,12 +37,15 @@ Run top-to-bottom (`Restart & Run All`) — no external data files are required.
 | 3C | Reaction-diffusion with EEZ fishing policy | 1D — offshore distance $s$ |
 | 3D | Stochastic annual harvest schedules | 1D — offshore distance $s$ |
 | 4 | Two-species Lotka-Volterra competition + diffusion | 1D — offshore distance $s$ |
+| 5 | 2D reaction-diffusion with EEZ fishing policy | 2D — offshore $\xi$ × alongshore $\eta$ |
+| 6 | 2D two-species Lotka-Volterra competition + diffusion | 2D — offshore $\xi$ × alongshore $\eta$ |
 
-> **Note on heatmaps:** The 3D surface plots and heatmaps in Section 3C display
+> **Note on heatmaps:** The 3D surface plots and heatmaps in Sections 3C and 4C display
 > $x(\xi, \tau)$ as a colour map with offshore position $\xi$ on one axis and
 > time $\tau$ on the other. These are visualisations of the **1D PDE solution**,
 > not true 2D spatial PDEs (there is no diffusion in a second spatial direction
-> in Sections 1–4).
+> in Sections 1–4). Sections 5–6 are genuine 2D spatial PDEs solved on a
+> $(\xi, \eta)$ grid.
 
 ---
 
@@ -45,12 +58,16 @@ Run top-to-bottom (`Restart & Run All`) — no external data files are required.
   $s \in [0, L]$ is the offshore distance and $L = 600\,\text{km}$ is the domain length.
 - $x(\xi,\tau)$ — dimensionless density $x = u/K$ at dimensionless position
   $\xi = s/L \in [0,1]$.
+- $x(\xi,\eta,\tau)$ — dimensionless density on the 2D grid (Sections 5–6),
+  where $\eta = z/W \in [0,1]$ is the dimensionless alongshore position and
+  $W$ is the alongshore domain width.
 
 | Substitution | Definition | Interpretation |
 |---|---|---|
 | $x = N/K$ (ODE) or $x = u/K$ (PDE) | Density scaled by carrying capacity | Population as fraction of $K$ |
 | $\xi = s/L$ | Offshore position scaled by domain length | $\xi \in [0,1]$ |
 | $\tau = rt$ | Time scaled by growth rate $r$ | Dimensionless time |
+| $\eta = z/W$ | Alongshore position scaled by domain width | $\eta \in [0,1]$, periodic |
 | $\gamma = h/r$ | Harvest rate scaled by growth rate | Ratio of harvesting to growth |
 | $\delta = D/(rL^2)$ | Diffusion coefficient scaled by growth and domain area | Ratio of mixing to growth |
 
@@ -349,16 +366,99 @@ competitive exclusion occurs when $\alpha_{12}\alpha_{21} > 1$.
 
 ---
 
+## 5 — 2D Reaction-Diffusion (Ocean Map): Single Species
+
+### Governing equation (dimensionless)
+
+$$\frac{\partial x}{\partial \tau} = x(1-x) - \gamma(\xi)\,x + \delta\left(\frac{\partial^2 x}{\partial \xi^2} + \frac{\partial^2 x}{\partial \eta^2}\right)$$
+
+where $\xi \in [0,1]$ is the dimensionless offshore direction and
+$\eta \in [0,1]$ is the dimensionless alongshore direction.
+
+The piecewise harvesting rate $\gamma(\xi)$ depends only on offshore position,
+exactly as in Section 3C.
+
+### Boundary conditions
+
+| Direction | Boundary | Condition | Implementation |
+|---|---|---|---|
+| Offshore $\xi$ | $\xi = 0$ (coast) and $\xi = 1$ (far sea) | No-flux Neumann: $\partial x/\partial\xi = 0$ | Ghost rows via `np.pad(U, ((1,1),(0,0)), mode='reflect')` |
+| Alongshore $\eta$ | $\eta = 0$ and $\eta = 1$ | Periodic | `np.roll(U, ±1, axis=1)` |
+
+> **Array convention:** rows index offshore ($\xi$, axis 0), columns index
+> alongshore ($\eta$, axis 1). The fishing profile $\gamma(\xi)$ has shape
+> $(n_\xi,)$ and is reshaped to $(n_\xi, 1)$ before multiplying the
+> $(n_\xi, n_\eta)$ density field to avoid a silent broadcasting bug.
+
+### Stability condition
+
+$$\Delta\tau \le \frac{0.2\,\min(\Delta\xi^2, \Delta\eta^2)}{4\delta}$$
+
+$n_t = \lceil T_{\rm end}/\Delta\tau \rceil$ is set so the last step hits
+$\tau = T_{\rm end}$ exactly.
+
+### Scenarios
+
+| Scenario | $\gamma_{\rm in}$ (EEZ, $\xi \le 1/3$) | $\gamma_{\rm out}$ (offshore, $\xi > 1/3$) |
+|---|---|---|
+| **A0** | 0 | 0 | No fishing baseline |
+| **A1** | $\gamma_{\rm MEY}$ | $\gamma_{\rm MEY}$ | Uniform MEY everywhere |
+| **A2** | 0 | $\gamma_{\rm MSY}$ | EEZ protected, offshore fished at MSY |
+| **A3** | $\gamma_{\rm MEY}$ | $\gamma_{\rm MSY}$ + pulse | Pulse fishing event in international waters |
+
+### Outputs
+
+- 2D heatmaps of $x(\xi,\eta)$ at selected times with EEZ boundary line overlay.
+- Biomass time series $B(\tau) = \int_0^1\!\int_0^1 x\,d\xi\,d\eta$ and phase-space plots.
+
+---
+
+## 6 — 2D Reaction-Diffusion: Competing Species (Lotka-Volterra)
+
+### Governing equations (dimensionless)
+
+$$\frac{\partial u}{\partial \tau} = u\!\left(1 - u - \alpha_{12}\frac{K_2}{K_1}v\right) - \gamma_1(\xi)\,u + \delta_1\!\left(\frac{\partial^2 u}{\partial \xi^2} + \frac{\partial^2 u}{\partial \eta^2}\right)$$
+
+$$\frac{\partial v}{\partial \tau} = \frac{r_2}{r_1}\,v\!\left(1 - v - \alpha_{21}\frac{K_1}{K_2}u\right) - \gamma_2(\xi)\,v + \delta_2\!\left(\frac{\partial^2 v}{\partial \xi^2} + \frac{\partial^2 v}{\partial \eta^2}\right)$$
+
+Same 2D domain and boundary conditions as Section 5, applied independently
+to both species.
+
+### Stability condition
+
+$$\Delta\tau \le \min\!\left(\frac{0.2\,\min(\Delta\xi^2,\Delta\eta^2)}{4\max(\delta_1,\delta_2)},\; \frac{0.2}{\max(1,\,r_2/r_1)}\right)$$
+
+### Scenarios
+
+| Scenario | Competition coefficients | Long-run outcome |
+|---|---|---|
+| **B0** | $\alpha_{12}\alpha_{21} < 1$ | Stable coexistence |
+| **B1** | $\alpha_{12}\alpha_{21} > 1$, species 2 stronger | Competitive exclusion — species 2 dominates |
+| **B2** | Asymmetric diffusion ($\delta_1 \neq \delta_2$) | Spatial segregation between species |
+
+### Outputs
+
+- Multi-panel heatmaps of $u(\xi,\eta)$, $v(\xi,\eta)$, and dominance map
+  $\text{sign}(u - v)$ at selected times.
+- Biomass time series for both species; competition phase-space plot.
+
+---
+
 ## Spatial Domain
 
-The 1D dimensionless domain $\xi = s/L \in [0,1]$ represents offshore distance:
+The dimensionless offshore axis $\xi = s/L \in [0,1]$ is shared by all spatial sections:
 
 - $\xi = 0$ — coastline
 - $\xi = 1$ — far offshore boundary ($s = L = 600\,\text{km}$)
 - $\xi_{\rm bnd} = 1/3$ — 200-mile EEZ limit ($s = 200\,\text{km}$)
 
-**Boundary conditions:** no-flux (Neumann) at both ends, $\partial x/\partial\xi = 0$,
-implemented via ghost-point finite differences (see Section 3A).
+**1D boundary conditions (§3–4):** no-flux Neumann at both ends,
+$\partial x/\partial\xi = 0$, implemented via ghost-point finite differences (see §3A).
+
+**2D domain (§5–6):** the grid is extended with a periodic alongshore axis
+$\eta = z/W \in [0,1]$, giving a rectangular ocean patch. Offshore ($\xi$, rows)
+retains no-flux Neumann BCs; alongshore ($\eta$, columns) is periodic. The EEZ
+boundary at $\xi_{\rm bnd} = 1/3$ is a horizontal line across the 2D grid.
 
 ---
 
@@ -367,25 +467,39 @@ implemented via ghost-point finite differences (see Section 3A).
 | Method | Sections | Details |
 |--------|----------|---------|
 | RK45 (adaptive) | 1, 2 | `scipy.integrate.solve_ivp`, `rtol=1e-9`, `atol=1e-12`; run with $r=1$, $K=1$ for direct ND output |
-| Explicit Euler + central differences | 3A–4 | Second-order FD in $\xi$; first-order forward Euler in $\tau$ |
+| Explicit Euler + 1D central differences | 3A–4 | Second-order FD in $\xi$; first-order forward Euler in $\tau$ |
+| Explicit Euler + 2D central differences | 5, 6 | `np.roll` for periodic $\eta$; `np.pad(reflect)` for no-flux $\xi$; stability uses both diffusion and reaction limits |
 
 **Stability conditions (dimensionless):**
 
-$$\Delta\tau \le \frac{0.45\,\Delta\xi^2}{2\delta} \qquad \text{(diffusion limit)}$$
+| Sections | Diffusion limit | Reaction limit |
+|---|---|---|
+| 3A–4 | $\Delta\tau \le 0.45\,\Delta\xi^2/(2\delta)$ | $\Delta\tau \le 0.2/\max(1, \gamma_{\rm max})$ |
+| 5 | $\Delta\tau \le 0.2\,\min(\Delta\xi^2, \Delta\eta^2)/(4\delta)$ | — |
+| 6 | $\Delta\tau \le 0.2\,\min(\Delta\xi^2, \Delta\eta^2)/(4\max(\delta_1,\delta_2))$ | $\Delta\tau \le 0.2/\max(1,\,r_2/r_1)$ |
 
-$$\Delta\tau \le \frac{0.2}{\max(1,\,\gamma_{\rm max})} \qquad \text{(reaction/harvest limit)}$$
+The actual $\Delta\tau$ is the minimum of all applicable constraints; for two-species
+models the minimum is taken across both species. $n_t = \lceil T_{\rm end}/\Delta\tau \rceil$
+is then recomputed so the last step lands exactly at $T_{\rm end}$.
 
-The actual $\Delta\tau$ is the minimum of both constraints; for the two-species model
-the minimum is taken across both species. The PDE solver uses dimensional inputs
-internally; results are converted to ND after simulation via $x = u/K$,
-$\xi = s/L$, $\tau = rt$.
+The 1D PDE solver uses dimensional inputs internally; results are converted to ND
+after simulation via $x = u/K$, $\xi = s/L$, $\tau = rt$. The 2D solvers
+(§5–6) work directly in dimensionless variables.
 
 ---
 
 ## How to Run
 
-All sections run from **`visualsv3.ipynb`**. Open the notebook and execute
-`Restart & Run All`. Sections can also be run individually in order.
+Run **`visualsv3.ipynb`** (all §1–6 in one place) or one of the focused split
+notebooks. Open the chosen notebook and execute `Restart & Run All`; sections
+can also be run individually in order.
+
+| Notebook | Sections |
+|---|---|
+| `visualsv3.ipynb` | §1–6 (complete) |
+| `01_ode_models.ipynb` | §1–2 only |
+| `02_1d_pde.ipynb` | §3–4 only |
+| `03_2d_ocean.ipynb` | §5–6 only |
 
 | Section | Key outputs |
 |---------|-------------|
@@ -396,9 +510,12 @@ All sections run from **`visualsv3.ipynb`**. Open the notebook and execute
 | §3C | EEZ fishing policy scenarios — density snapshots, biomass time series, catch plots, space-time heatmaps |
 | §3D | Stochastic annual harvest schedule trajectories |
 | §4 | Two-species competition — density snapshots, biomass time series, catch plots, heatmaps |
+| §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series |
+| §6 | 2D competing species — U/V/dominance heatmaps, competition time series |
 
 The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 `plotting.py`) must reside in the same directory as the notebook.
+Sections §5–6 have no external module dependencies.
 
 ---
 
@@ -414,9 +531,13 @@ The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 ## Project Files
 
 ```
-visualsv3.ipynb          Main notebook (orchestration + visualisation)
+visualsv3.ipynb          Main notebook — all §1–6 combined
+01_ode_models.ipynb      Split notebook — §1–2 ODE models
+02_1d_pde.ipynb          Split notebook — §3–4 1D PDE models
+03_2d_ocean.ipynb        Split notebook — §5–6 2D ocean models (self-contained)
 ode_models.py            Logistic and harvested ODE functions
-pde_solver.py            Spatial discretisation and reaction-diffusion PDE solver
+pde_solver.py            1D spatial discretisation and reaction-diffusion PDE solver
+pde_solver_2d.py         2D spatial discretisation and PDE solver (standalone module)
 validation.py            Numerical validation utilities
 plotting.py              All reusable plotting functions (labels in ND notation)
 requirements.txt         Python dependencies
