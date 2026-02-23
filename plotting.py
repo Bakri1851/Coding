@@ -281,3 +281,129 @@ def plot_heatmap(
     ax.legend(loc="upper right", fontsize=9)
     fig.tight_layout()
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Two-species competing plots (Section 4)
+# ---------------------------------------------------------------------------
+
+def plot_snapshots_2s(
+    res: dict,
+    title: str,
+    K1: float | None = None,
+    K2: float | None = None,
+) -> plt.Figure:
+    """Density snapshot plot for two competing species.
+
+    Species 1 (u) drawn solid; species 2 (v) drawn dashed.
+    Both species share colour per snapshot time.
+    """
+    snap_times = sorted(set(res["snapshots_u"]) | set(res["snapshots_v"]))
+    colors = plt.cm.viridis(np.linspace(0.1, 0.9, max(len(snap_times), 1)))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, ts in enumerate(snap_times):
+        c = colors[i]
+        if ts in res["snapshots_u"]:
+            ax.plot(res["s"], res["snapshots_u"][ts], color=c, ls="-",
+                    linewidth=2.0, label=f"u (sp.1)  τ={ts:g}")
+        if ts in res["snapshots_v"]:
+            ax.plot(res["s"], res["snapshots_v"][ts], color=c, ls="--",
+                    linewidth=2.0, label=f"v (sp.2)  τ={ts:g}")
+
+    if K1 is not None:
+        ax.axhline(K1, color="steelblue", ls=":", lw=1.2, label=f"K1={K1:g}")
+    if K2 is not None:
+        ax.axhline(K2, color="tomato",    ls=":", lw=1.2, label=f"K2={K2:g}")
+    ax.axvline(res["s_boundary"], color="red", ls=":", lw=1.2,
+               label=f"ξ_bnd={res['s_boundary']:.3f}")
+
+    ax.set_title(f"Two-Species Density Snapshots — {title}")
+    ax.set_xlabel("Dimensionless position ξ")
+    ax.set_ylabel("Dimensionless density")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    return fig
+
+
+def plot_biomass_2s(res: dict, title: str) -> plt.Figure:
+    """Biomass time-series for two competing species.
+
+    Shows B1_in, B1_out, B1_tot (blues) and B2_in, B2_out, B2_tot (reds).
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.plot(res["time"], res["B1_tot"], color="steelblue",  lw=2.0, label="B1_tot (sp.1 total)")
+    ax.plot(res["time"], res["B1_in"],  color="steelblue",  lw=1.2, ls="--", label="B1_in  (sp.1 EEZ)")
+    ax.plot(res["time"], res["B1_out"], color="steelblue",  lw=1.2, ls=":",  label="B1_out (sp.1 intl)")
+    ax.plot(res["time"], res["B2_tot"], color="tomato",     lw=2.0, label="B2_tot (sp.2 total)")
+    ax.plot(res["time"], res["B2_in"],  color="tomato",     lw=1.2, ls="--", label="B2_in  (sp.2 EEZ)")
+    ax.plot(res["time"], res["B2_out"], color="tomato",     lw=1.2, ls=":",  label="B2_out (sp.2 intl)")
+
+    ax.set_title(f"Two-Species Biomass — {title}")
+    ax.set_xlabel("Dimensionless time τ")
+    ax.set_ylabel("Dimensionless biomass ∫ dξ")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, ncol=2)
+    fig.tight_layout()
+    return fig
+
+
+def plot_catch_2s(res: dict, title: str) -> plt.Figure:
+    """Catch rate + cumulative catch for two competing species (twin axes)."""
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    ax1.plot(res["time"], res["Catch1"], color="steelblue", lw=2.0, label="Catch rate sp.1")
+    ax1.plot(res["time"], res["Catch2"], color="tomato",    lw=2.0, label="Catch rate sp.2")
+    ax1.set_xlabel("Dimensionless time τ")
+    ax1.set_ylabel("Dimensionless catch rate")
+    ax1.grid(True, alpha=0.3)
+
+    ax2 = ax1.twinx()
+    ax2.plot(res["time"], res["CumCatch1"], color="steelblue", lw=1.5, ls="--",
+             label="Cum. catch sp.1")
+    ax2.plot(res["time"], res["CumCatch2"], color="tomato",    lw=1.5, ls="--",
+             label="Cum. catch sp.2")
+    ax2.set_ylabel("Cumulative dimensionless catch")
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=9, loc="center right")
+
+    ax1.set_title(f"Two-Species Catch — {title}")
+    fig.tight_layout()
+    return fig
+
+
+def plot_heatmap_2s(
+    res: dict,
+    title: str,
+) -> plt.Figure:
+    """Side-by-side heatmaps of the two-species density fields u and v."""
+    if "u_full" not in res or "v_full" not in res:
+        raise ValueError("store_full=True required for plot_heatmap_2s")
+
+    s_arr  = res["s"]
+    t_arr  = res["t_full"]
+    u_full = res["u_full"]
+    v_full = res["v_full"]
+    s_bnd  = res["s_boundary"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+
+    for ax, field, sp_label in zip(axes, [u_full, v_full], ["u  (species 1)", "v  (species 2)"]):
+        pcm = ax.pcolormesh(s_arr, t_arr, field, cmap="viridis", shading="auto")
+        ax.axvline(s_bnd, color="red", ls="--", lw=1.5, label=f"ξ_bnd={s_bnd:.3f}")
+        peak_s = s_arr[np.argmax(field, axis=1)]
+        ax.plot(peak_s, t_arr, color="magenta", lw=1.8, ls="--", label="Peak core")
+        ax.set_xlabel("Dimensionless position ξ")
+        ax.set_title(f"{sp_label}")
+        ax.legend(fontsize=8)
+        cb = fig.colorbar(pcm, ax=ax)
+        cb.set_label("Density")
+
+    axes[0].set_ylabel("Dimensionless time τ")
+    fig.suptitle(f"Two-Species Density Heatmaps — {title}", fontsize=11)
+    fig.tight_layout()
+    return fig

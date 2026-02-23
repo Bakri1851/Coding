@@ -1,8 +1,9 @@
 # Fish Population Modelling — Spatial Reaction-Diffusion with Harvesting
 
-Numerical modelling of single-species fish population dynamics, progressing from
-time-only ODEs to a 1-D spatial reaction-diffusion PDE with spatially varying
-harvesting. The project builds complexity incrementally: each section validates
+Numerical modelling of fish population dynamics, progressing from time-only ODEs
+to a 1-D spatial reaction-diffusion PDE with spatially varying harvesting, and
+finally to a **two-species competing system** with Lotka-Volterra interaction
+terms. The project builds complexity incrementally: each section validates
 against known solutions or limiting cases before the next layer is added.
 
 All equations are presented and all results are displayed in **dimensionless
@@ -380,6 +381,87 @@ $$
 
 ---
 
+## 4 — Two-Species Competing Reaction-Diffusion with Harvesting
+
+### Motivation
+
+Section 4 extends the single-species framework to a **two-species Lotka-Volterra
+competition** model. Both species occupy the same 1-D offshore domain, interact
+via inter-species competition, undergo logistic growth, diffuse spatially, and
+are subject to independent EEZ-based fishing policies.
+
+### Governing PDEs (Dimensionless)
+
+With $u = u_{\rm dim}/K_1$, $v = v_{\rm dim}/K_2$, $\xi = s/L$, $\tau = r_1 t$:
+
+$$
+\frac{\partial u}{\partial \tau} = u\!\left(1 - u - \alpha\,\frac{K_2}{K_1}\,v\right) - \tilde{h}_1(\xi)\,u + \delta_1\,\frac{\partial^2 u}{\partial \xi^2}
+$$
+
+$$
+\frac{\partial v}{\partial \tau} = \frac{r_2}{r_1}\,v\!\left(1 - v - \beta\,\frac{K_1}{K_2}\,u\right) - \tilde{h}_2(\xi)\,v + \delta_2\,\frac{\partial^2 v}{\partial \xi^2}
+$$
+
+where $\delta_i = D_i/(r_1 L^2)$ and $\alpha$, $\beta$ are the inter-species competition coefficients.
+
+### Competition Parameters
+
+| Symbol | Role |
+|--------|------|
+| $\alpha$ | Competitive effect of species 2 on species 1 |
+| $\beta$ | Competitive effect of species 1 on species 2 |
+| $\delta_1, \delta_2$ | Dimensionless diffusion coefficients for each species |
+| $r_2/r_1$ | Relative growth rate of species 2 |
+
+Coexistence is possible when $\alpha\beta < 1$; one species excludes the other when $\alpha\beta > 1$.
+
+### Initial Conditions
+
+Each species starts with an independent Gaussian profile:
+
+$$
+u(\xi, 0) = \exp\!\left(-\left(\frac{s - s_{0,u}}{\sigma_u}\right)^2\right), \qquad
+v(\xi, 0) = \exp\!\left(-\left(\frac{s - s_{0,v}}{\sigma_v}\right)^2\right)
+$$
+
+where $s_{0,u}$, $s_{0,v}$ are the dimensional peak positions and $\sigma_u$, $\sigma_v$ the widths.
+
+### Fishing Policy
+
+Same piecewise EEZ structure as Section 3C, with **independent** rates per species:
+
+$$
+\tilde{h}_i(\xi) = \begin{cases}
+\tilde{h}_{i,\rm in}  & \xi \le 1/3 \quad \text{(EEZ)} \\
+\tilde{h}_{i,\rm out} & \xi > 1/3 \quad \text{(international)}
+\end{cases}
+$$
+
+Stochastic annual schedules (`h1_in_schedule`, `h1_out_schedule`, `h2_in_schedule`,
+`h2_out_schedule`) are supported using the same annual-indexing scheme as Section 3D.
+
+### Diagnostics (Dimensionless)
+
+| Quantity | Definition |
+|----------|------------|
+| $B_{1,\rm in}(\tau)$ | $\int_0^{1/3} u\,d\xi$ — inshore biomass of species 1 |
+| $B_{1,\rm out}(\tau)$ | $\int_{1/3}^{1} u\,d\xi$ — offshore biomass of species 1 |
+| $B_{1,\rm tot}(\tau)$ | $\int_0^{1} u\,d\xi$ — total biomass of species 1 |
+| $B_{2,\rm in/out/tot}$ | Equivalent quantities for species 2 |
+| Catch$_i$ | $\int_0^{1} \tilde{h}_i(\xi)\,x_i\,d\xi$ — instantaneous catch per species |
+| CumCatch$_i$ | Running integral of Catch$_i$ |
+
+### Plots
+
+| Function | Description |
+|----------|-------------|
+| `plot_snapshots_2s(res, title)` | Density profiles at snapshot times — species 1 solid, species 2 dashed; same colour per time |
+| `plot_biomass_2s(res, title)` | Biomass time series for both species (steelblue = species 1, tomato = species 2) |
+| `plot_catch_2s(res, title)` | Twin-axis: instantaneous catch rate (left) and cumulative catch (right) per species |
+| `plot_heatmap_2s(res, title)` | Side-by-side heatmaps of $u(\xi,\tau)$ and $v(\xi,\tau)$; requires `store_full=True` |
+
+---
+
 ## Spatial Domain
 
 The 1-D dimensionless coordinate $\xi = s/L \in [0, 1]$ represents offshore position:
@@ -400,6 +482,7 @@ the finite-difference Laplacian.
 |--------|-----------|---------|
 | RK45 (adaptive Runge-Kutta) | Sections 1, 2 (ODEs) | `scipy.integrate.solve_ivp`, `rtol=1e-9`, `atol=1e-12`; called with `r=1, K=1` for ND output |
 | Explicit Euler + finite differences | Sections 3A, 3B, 3C (PDEs) | Second-order central differences in $\xi$, first-order forward Euler in $\tau$ |
+| Explicit Euler + finite differences | Section 4 (two-species PDE) | Same spatial scheme applied independently to each species; $\Delta t$ governed by the maximum diffusion and harvest rate across both species |
 
 **Stability (ND):** The explicit Euler PDE solver enforces
 $\Delta\tau \le 0.45 \cdot \Delta\xi^2/(2\delta)$. Section 3C adds a
@@ -424,6 +507,26 @@ Results are converted to ND after each simulation via the `to_nd` helper
 | `u0_type` | `"gaussian"` | IC type: `"gaussian"` or `"uniform"` |
 | `gaussian_center` | `150.0` | Dimensional offshore distance of Gaussian IC peak ($= \xi_0 \cdot L$) |
 | `gaussian_scale` | `50.0` | Width parameter $\sigma$ of the Gaussian IC (dimensional) |
+| `snapshot_times` | `[0,10,20,40,60]` | Dimensional times for spatial snapshots |
+
+### `simulate_competing_rd_fishing` Solver Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `L`, `N` | — | Domain length and number of grid points |
+| `D1`, `D2` | — | Diffusion coefficients for species 1 and 2 |
+| `r1`, `r2` | — | Intrinsic growth rates |
+| `K1`, `K2` | — | Carrying capacities |
+| `alpha`, `beta` | — | Inter-species competition coefficients |
+| `h1_in` / `h1_out` | `0.0` | Constant inshore/offshore harvest rates for species 1 |
+| `h2_in` / `h2_out` | `0.0` | Constant inshore/offshore harvest rates for species 2 |
+| `h1_in_schedule` / `h1_out_schedule` | `None` | Annual harvest-rate arrays `(n_years,)` for species 1 |
+| `h2_in_schedule` / `h2_out_schedule` | `None` | Annual harvest-rate arrays `(n_years,)` for species 2 |
+| `u0_gaussian_center` / `u0_gaussian_scale` | — | Dimensional Gaussian IC peak position and width for species 1 |
+| `v0_gaussian_center` / `v0_gaussian_scale` | — | Dimensional Gaussian IC peak position and width for species 2 |
+| `store_full` | `False` | If `True`, save full space-time fields `u_full`, `v_full` for heatmaps |
+| `full_n_frames` | `300` | Maximum time frames stored when `store_full=True` |
+| `dt_safety` | `0.45` | Safety factor for the diffusion stability limit |
 | `snapshot_times` | `[0,10,20,40,60]` | Dimensional times for spatial snapshots |
 
 ---
