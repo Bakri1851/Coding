@@ -25,7 +25,7 @@ def laplacian_2d_periodicx_neumanny(U: np.ndarray, dx: float, dy: float) -> np.n
     Ux_plus = np.roll(U, -1, axis=1)
     Ux_minus = np.roll(U, 1, axis=1)
 
-    U_pad = np.pad(U, ((1, 1), (0, 0)), mode="edge")
+    U_pad = np.pad(U, ((1, 1), (0, 0)), mode="reflect")
     Uy_plus = U_pad[2:, :]
     Uy_minus = U_pad[:-2, :]
 
@@ -539,9 +539,250 @@ def _check_uniform_competing(
         raise RuntimeError("Uniform two-species ODE reduction check failed for V.")
 
 
+def simulate_2d_single(r, K, D, nx, ny, dx, dy, T_end,
+                       snapshot_times, y_boundary,
+                       h_in=0.0, h_out=0.0, pulse=None, seed=42,
+                       cx0=None, cy0=None, ic_sigma=40.0):
+    """Explicit-Euler 2D single-species logistic + diffusion with EEZ fishing.
+
+    PDE:  u_t = r*u*(1-u/K) - h(y,t)*u + D*(u_xx + u_yy)
+    BC:   periodic in x,  Neumann no-flux in y
+
+    Parameters
+    ----------
+    r, K, D         : float   growth rate, carrying capacity, diffusivity
+    nx, ny          : int     grid dimensions
+    dx, dy          : float   grid spacing (miles)
+    T_end           : float   total simulation time
+    snapshot_times  : list    times at which to save U snapshot
+    y_boundary      : float   EEZ boundary y-coordinate (miles)
+    h_in, h_out     : float   harvest rates inside / outside EEZ
+    pulse           : dict or None  optional pulse dict with keys
+                                    't_start', 't_end', 'h_out_pulse'
+    seed            : int     random seed for reproducibility
+    cx0, cy0        : float or None  x,y centre of initial Gaussian (miles);
+                                     defaults to domain centre if None
+    ic_sigma        : float   standard deviation of initial Gaussian (miles)
+
+    Returns
+    -------
+    dict with keys:
+        'x_grid', 'y_grid'    : coordinate arrays
+        'snapshots'           : dict {t_float -> ndarray (ny, nx)}
+        'time', 'Btot'        : time series of total biomass
+        'Bin', 'Bout'         : biomass inside / outside EEZ
+        'y_bnd_row'           : row index of EEZ boundary
+        'dt'                  : actual time step used
+    """
+    np.random.seed(seed)
+
+    x_grid = np.linspace(0.0, (nx - 1) * dx, nx)
+    y_grid = np.linspace(0.0, (ny - 1) * dy, ny)
+    XX, YY = np.meshgrid(x_grid, y_grid)
+
+    y_bnd_row = int(np.searchsorted(y_grid, y_boundary, side='right')) - 1
+
+    dt = 0.2 * min(dx**2, dy**2) / (4.0 * D)
+    nt = int(np.ceil(T_end / dt))
+    dt = T_end / nt
+
+    _cx = cx0 if cx0 is not None else 0.5 * (nx - 1) * dx
+    _cy = cy0 if cy0 is not None else 0.5 * (ny - 1) * dy
+    U = K * np.exp(-((XX - _cx)**2 + (YY - _cy)**2) / (2.0 * ic_sigma**2))
+    U = np.maximum(U, 0.0)
+
+    snap_set = sorted(snapshot_times)
+    snap_idx = 0
+    snapshots = {}
+    if snap_idx < len(snap_set) and snap_set[snap_idx] <= 0.0 + 1e-12:
+        snapshots[snap_set[snap_idx]] = U.copy()
+        snap_idx += 1
+
+    def _btot(F, y_vals=None):
+        y_use = y_grid if y_vals is None else y_vals
+        return np.trapezoid(np.trapezoid(F, x_grid, axis=1), y_use)
+
+    time_arr = np.empty(nt + 1)
+    Btot = np.empty(nt + 1)
+    Bin  = np.empty(nt + 1)
+    Bout = np.empty(nt + 1)
+    time_arr[0] = 0.0
+    Btot[0] = _btot(U)
+    Bin[0]  = _btot(U[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+    Bout[0] = _btot(U[y_bnd_row:, :], y_grid[y_bnd_row:])
+
+    for n in range(1, nt + 1):
+        t_now = n * dt
+        h_y = fishing_profile_y(y_grid, t_now - 0.5 * dt,
+                                y_boundary, h_in, h_out, pulse)
+        h_2d = h_y[:, np.newaxis]
+        lap = laplacian_2d_periodicx_neumanny(U, dx, dy)
+        dU  = r * U * (1.0 - U / K) - h_2d * U + D * lap
+        U   = np.maximum(U + dt * dU, 0.0)
+
+        time_arr[n] = t_now
+        Btot[n] = _btot(U)
+        Bin[n]  = _btot(U[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+        Bout[n] = _btot(U[y_bnd_row:, :], y_grid[y_bnd_row:])
+
+        while snap_idx < len(snap_set) and t_now >= snap_set[snap_idx] - 0.5 * dt:
+            snapshots[snap_set[snap_idx]] = U.copy()
+            snap_idx += 1
+
+    return {
+        'x_grid': x_grid, 'y_grid': y_grid,
+        'snapshots': snapshots,
+        'time': time_arr, 'Btot': Btot, 'Bin': Bin, 'Bout': Bout,
+        'y_bnd_row': y_bnd_row, 'dt': dt,
+    }
+
+
+def simulate_2d_two_species(
+        r1, K1, D1, r2, K2, D2, a12, a21,
+        h1_params, h2_params,
+        nx, ny, dx, dy,
+        T_end, snapshot_times, y_boundary, seed=42,
+        cx_U0=None, cy_U0=None, cx_V0=None, cy_V0=None, sig_ic=40.0):
+    """Explicit-Euler 2D two-species Lotka-Volterra + diffusion.
+
+    PDEs:
+        U_t = r1*U*(1-(U+a12*V)/K1) - h1(y)*U + D1*Lap(U)
+        V_t = r2*V*(1-(V+a21*U)/K2) - h2(y)*V + D2*Lap(V)
+
+    BCs: periodic in x (axis=1), Neumann no-flux in y (axis=0).
+
+    Parameters
+    ----------
+    r1, K1, D1   : float  species-1 growth rate, capacity, diffusivity
+    r2, K2, D2   : float  species-2 growth rate, capacity, diffusivity
+    a12          : float  competition coefficient of V on U
+    a21          : float  competition coefficient of U on V
+    h1_params    : dict   {'h_in': float, 'h_out': float}  fishing on U
+    h2_params    : dict   {'h_in': float, 'h_out': float}  fishing on V
+    nx, ny       : int    grid dimensions
+    dx, dy       : float  grid spacing (miles)
+    T_end        : float  total simulation time
+    snapshot_times : list times at which to save U and V
+    y_boundary   : float  EEZ boundary (miles)
+    seed         : int    random seed
+    cx_U0, cy_U0 : float or None  centre of U initial blob (miles)
+    cx_V0, cy_V0 : float or None  centre of V initial blob (miles)
+    sig_ic       : float  standard deviation of initial Gaussians (miles)
+
+    Returns
+    -------
+    dict with keys:
+        'x_grid', 'y_grid'
+        'snapshots_U', 'snapshots_V'  : dict {t -> ndarray (ny, nx)}
+        'time', 'B1tot', 'B2tot'      : total biomass time series
+        'B1in',  'B2in'               : biomass inside EEZ
+        'B1out', 'B2out'              : biomass outside EEZ
+        'y_bnd_row', 'dt'
+    """
+    np.random.seed(seed)
+
+    x_grid = np.linspace(0.0, (nx - 1) * dx, nx)
+    y_grid = np.linspace(0.0, (ny - 1) * dy, ny)
+    XX, YY = np.meshgrid(x_grid, y_grid)
+    Ly     = (ny - 1) * dy
+
+    y_bnd_row = int(np.searchsorted(y_grid, y_boundary, side='right')) - 1
+
+    dt_diff = 0.2 * min(dx**2, dy**2) / (4.0 * max(D1, D2))
+    dt_rxn  = 0.2 / max(r1, r2)
+    dt      = min(dt_diff, dt_rxn)
+    nt      = int(np.ceil(T_end / dt))
+    dt      = T_end / nt
+
+    _cx_U = cx_U0 if cx_U0 is not None else 0.5 * (nx - 1) * dx
+    _cy_U = cy_U0 if cy_U0 is not None else 0.5 * Ly
+    U = 0.8 * K1 * np.exp(-((XX - _cx_U)**2 + (YY - _cy_U)**2) / (2.0 * sig_ic**2))
+
+    _cx_V = cx_V0 if cx_V0 is not None else 0.5 * (nx - 1) * dx
+    _cy_V = cy_V0 if cy_V0 is not None else 0.5 * Ly
+    V = 0.8 * K2 * np.exp(-((XX - _cx_V)**2 + (YY - _cy_V)**2) / (2.0 * sig_ic**2))
+
+    U = np.maximum(U, 0.0)
+    V = np.maximum(V, 0.0)
+
+    h1_y = np.where(y_grid <= y_boundary,
+                    h1_params['h_in'], h1_params['h_out'])[:, np.newaxis]
+    h2_y = np.where(y_grid <= y_boundary,
+                    h2_params['h_in'], h2_params['h_out'])[:, np.newaxis]
+
+    snap_set = sorted(snapshot_times)
+    snap_idx = 0
+    snapshots_U, snapshots_V = {}, {}
+    if snap_idx < len(snap_set) and snap_set[snap_idx] <= 0.0 + 1e-12:
+        snapshots_U[snap_set[snap_idx]] = U.copy()
+        snapshots_V[snap_set[snap_idx]] = V.copy()
+        snap_idx += 1
+
+    def _btot(F, y_vals=None):
+        y_use = y_grid if y_vals is None else y_vals
+        return np.trapezoid(np.trapezoid(F, x_grid, axis=1), y_use)
+
+    time_arr = np.empty(nt + 1)
+    B1tot = np.empty(nt + 1);  B2tot = np.empty(nt + 1)
+    B1in  = np.empty(nt + 1);  B2in  = np.empty(nt + 1)
+    B1out = np.empty(nt + 1);  B2out = np.empty(nt + 1)
+
+    time_arr[0] = 0.0
+    B1tot[0] = _btot(U);  B2tot[0] = _btot(V)
+    B1in[0]  = _btot(U[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+    B2in[0]  = _btot(V[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+    B1out[0] = _btot(U[y_bnd_row:, :], y_grid[y_bnd_row:])
+    B2out[0] = _btot(V[y_bnd_row:, :], y_grid[y_bnd_row:])
+
+    _warned = False
+
+    for n in range(1, nt + 1):
+        t_now = n * dt
+
+        lapU = laplacian_2d_periodicx_neumanny(U, dx, dy)
+        lapV = laplacian_2d_periodicx_neumanny(V, dx, dy)
+
+        dU = r1 * U * (1.0 - (U + a12 * V) / K1) - h1_y * U + D1 * lapU
+        dV = r2 * V * (1.0 - (V + a21 * U) / K2) - h2_y * V + D2 * lapV
+
+        U = U + dt * dU
+        V = V + dt * dV
+
+        if (U.min() < -1e-10 or V.min() < -1e-10) and not _warned:
+            print(f'  NOTE: negative values at t={t_now:.3f} yr '
+                  f'(min U={U.min():.2e}, min V={V.min():.2e}) — clipping')
+            _warned = True
+        U = np.maximum(U, 0.0)
+        V = np.maximum(V, 0.0)
+
+        time_arr[n] = t_now
+        B1tot[n] = _btot(U);  B2tot[n] = _btot(V)
+        B1in[n]  = _btot(U[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+        B2in[n]  = _btot(V[:y_bnd_row + 1, :], y_grid[:y_bnd_row + 1])
+        B1out[n] = _btot(U[y_bnd_row:, :], y_grid[y_bnd_row:])
+        B2out[n] = _btot(V[y_bnd_row:, :], y_grid[y_bnd_row:])
+
+        while snap_idx < len(snap_set) and t_now >= snap_set[snap_idx] - 0.5 * dt:
+            snapshots_U[snap_set[snap_idx]] = U.copy()
+            snapshots_V[snap_set[snap_idx]] = V.copy()
+            snap_idx += 1
+
+    return {
+        'x_grid': x_grid, 'y_grid': y_grid,
+        'snapshots_U': snapshots_U, 'snapshots_V': snapshots_V,
+        'time': time_arr,
+        'B1tot': B1tot, 'B2tot': B2tot,
+        'B1in': B1in,   'B2in': B2in,
+        'B1out': B1out,  'B2out': B2out,
+        'y_bnd_row': y_bnd_row, 'dt': dt,
+    }
+
+
 __all__ = [
     "laplacian_2d_periodicx_neumanny",
     "fishing_profile_y",
     "simulate_single_2d",
     "simulate_competing_2d",
+    "simulate_2d_single",
+    "simulate_2d_two_species",
 ]

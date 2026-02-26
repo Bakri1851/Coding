@@ -5,8 +5,6 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import solve_ivp
 
-print("Hello")
-
 def logistic_rhs(t: float, x: np.ndarray, r: float, K: float) -> np.ndarray:
     """Return dx/dt for the logistic model."""
     del t  # Autonomous ODE: RHS does not explicitly depend on time.

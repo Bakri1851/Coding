@@ -376,6 +376,153 @@ def plot_catch_2s(res: dict, title: str) -> plt.Figure:
     return fig
 
 
+def plot_2d_snapshots_5(res: dict, title: str, K: float, y_boundary: float, cmap: str = 'viridis') -> None:
+    """Heatmap grid: one panel per snapshot time.
+
+    y=0 (coast) is at the bottom of each panel.
+    Red dashed horizontal line marks the 200-mile EEZ boundary.
+    """
+    snap_times_sorted = sorted(res['snapshots'].keys())
+    n = len(snap_times_sorted)
+    x_grid = res['x_grid']
+    y_grid = res['y_grid']
+
+    fig, axes = plt.subplots(1, n, figsize=(4 * n, 4.5),
+                             sharey=True, constrained_layout=True)
+    if n == 1:
+        axes = [axes]
+
+    vmin, vmax_c = 0.0, K * 1.1
+
+    for ax, ts in zip(axes, snap_times_sorted):
+        U = res['snapshots'][ts]
+        pcm = ax.pcolormesh(x_grid, y_grid, U,
+                            cmap=cmap, vmin=vmin, vmax=vmax_c,
+                            shading='auto')
+        ax.axhline(y_boundary, color='red', ls='--', lw=1.5,
+                   label='200-mile EEZ')
+        ax.set_title(f't = {ts:g} yr', fontsize=10)
+        ax.set_xlabel('x  (along-shore, miles)')
+        if ax is axes[0]:
+            ax.set_ylabel('y  (offshore, miles)')
+            ax.legend(fontsize=8, loc='upper right')
+        fig.colorbar(pcm, ax=ax, label='density u')
+
+    fig.suptitle(f'§5  {title}', fontsize=11, y=1.01)
+    plt.show()
+
+
+def plot_2d_biomass_5(res: dict, title: str) -> None:
+    """Biomass time series for §5: total, inside EEZ, outside EEZ."""
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(res['time'], res['Btot'], lw=2.0, color='steelblue',
+            label='Total biomass')
+    ax.plot(res['time'], res['Bin'],  lw=1.5, ls='--', color='seagreen',
+            label='Inside EEZ')
+    ax.plot(res['time'], res['Bout'], lw=1.5, ls=':',  color='tomato',
+            label='Outside EEZ')
+    ax.set_xlabel('Time  (yr)')
+    ax.set_ylabel('Biomass  (miles\u00b2 \u00d7 density)')
+    ax.set_title(f'\u00a75 Biomass \u2014 {title}')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
+    plt.show()
+
+
+def plot_2d_two_species(res: dict, title: str, K1: float, K2: float, y_boundary: float) -> None:
+    """For each snapshot: three side-by-side panels \u2014 U, V, U+V overlay.
+
+    Row layout: one row per snapshot time.
+    Panel 1: U density heatmap (Blues).
+    Panel 2: V density heatmap (Reds).
+    Panel 3: U heatmap (Blues) with V contour lines (red) overlaid.
+    """
+    snap_times_sorted = sorted(res['snapshots_U'].keys())
+    n_snaps = len(snap_times_sorted)
+    x_grid  = res['x_grid']
+    y_grid  = res['y_grid']
+
+    fig, axes = plt.subplots(n_snaps, 3,
+                             figsize=(15, 3.5 * n_snaps),
+                             constrained_layout=True)
+    if n_snaps == 1:
+        axes = axes[np.newaxis, :]
+
+    for row, ts in enumerate(snap_times_sorted):
+        U = res['snapshots_U'][ts]
+        V = res['snapshots_V'][ts]
+
+        ax = axes[row, 0]
+        pcm = ax.pcolormesh(x_grid, y_grid, U,
+                            cmap='Blues', vmin=0.0, vmax=K1 * 1.05,
+                            shading='auto')
+        ax.axhline(y_boundary, color='red', ls='--', lw=1.5, label='EEZ 200 mi')
+        ax.set_title(f'U  (sp. 1)   t = {ts:g} yr', fontsize=9)
+        ax.set_ylabel('y  (miles)')
+        if row == 0:
+            ax.legend(fontsize=7, loc='upper right')
+        fig.colorbar(pcm, ax=ax, label='density U')
+
+        ax = axes[row, 1]
+        pcm = ax.pcolormesh(x_grid, y_grid, V,
+                            cmap='Reds', vmin=0.0, vmax=K2 * 1.05,
+                            shading='auto')
+        ax.axhline(y_boundary, color='red', ls='--', lw=1.5)
+        ax.set_title(f'V  (sp. 2)   t = {ts:g} yr', fontsize=9)
+        ax.set_yticklabels([])
+        fig.colorbar(pcm, ax=ax, label='density V')
+
+        ax = axes[row, 2]
+        pcm = ax.pcolormesh(x_grid, y_grid, U,
+                            cmap='Blues', vmin=0.0, vmax=K1 * 1.05,
+                            shading='auto', alpha=0.85)
+        fig.colorbar(pcm, ax=ax, label='density U (shading)')
+        vmax_v = V.max() if V.max() > 1e-6 else 1.0
+        levels_v = np.linspace(0.05 * vmax_v, vmax_v, 6)
+        cs = ax.contour(x_grid, y_grid, V,
+                        levels=levels_v, colors='red', linewidths=1.0)
+        ax.clabel(cs, inline=True, fontsize=7, fmt='%.2f')
+        ax.axhline(y_boundary, color='black', ls='--', lw=1.5, label='EEZ 200 mi')
+        ax.set_title(f'U (shading) + V (red contours)   t = {ts:g} yr', fontsize=9)
+        ax.set_yticklabels([])
+        ax.legend(fontsize=7, loc='upper right')
+
+    for col in range(3):
+        axes[-1, col].set_xlabel('x  (along-shore, miles)')
+
+    fig.suptitle(f'\u00a76  {title}', fontsize=11, y=1.01)
+    plt.show()
+
+
+def plot_2d_biomass_6(res: dict, title: str) -> None:
+    """Biomass time series for \u00a76: both species, total and EEZ-split."""
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    ax.plot(res['time'], res['B1tot'], color='steelblue', lw=2.0,
+            label='U total (sp.1)')
+    ax.plot(res['time'], res['B1in'],  color='steelblue', lw=1.2, ls='--',
+            label='U in EEZ')
+    ax.plot(res['time'], res['B1out'], color='steelblue', lw=1.2, ls=':',
+            label='U outside EEZ')
+    ax.plot(res['time'], res['B2tot'], color='tomato', lw=2.0,
+            label='V total (sp.2)')
+    ax.plot(res['time'], res['B2in'],  color='tomato', lw=1.2, ls='--',
+            label='V in EEZ')
+    ax.plot(res['time'], res['B2out'], color='tomato', lw=1.2, ls=':',
+            label='V outside EEZ')
+    ax.set_xlabel('Time  (yr)')
+    ax.set_ylabel('Biomass  (miles\u00b2 \u00d7 density)')
+    ax.set_title(f'\u00a76 Biomass \u2014 {title}')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, ncol=2)
+    fig.tight_layout()
+    plt.show()
+
+
+# ---------------------------------------------------------------------------
+# Two-species competing plots (Section 4)
+# ---------------------------------------------------------------------------
+
 def plot_heatmap_2s(
     res: dict,
     title: str,

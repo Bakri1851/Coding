@@ -14,7 +14,6 @@ All results are presented in **dimensionless form** (see
 
 | Notebook | Sections | Contents |
 |---|---|---|
-| `visualsv3.ipynb` | §1–6 | Combined — all sections in one place |
 | `01_ode_models.ipynb` | §1–2 | ODE models only |
 | `02_1d_pde.ipynb` | §3–4 | 1D PDE — single-species and two-species |
 | `03_2d_ocean.ipynb` | §5–6 | 2D ocean models (self-contained) |
@@ -310,12 +309,24 @@ international zone, creating a **spillover gradient** near the boundary.
 4. **Space-time heatmap** — colour map of $x(\xi,\tau)$ with $\xi$ on the horizontal axis
    and $\tau$ on the vertical axis. This is a visualisation of the 1D PDE solution plotted
    over time; it is **not** a 2D spatial PDE.
+5. **3D surface plot** — the same space-time field rendered as a static Matplotlib surface
+   and as an interactive Plotly surface (Plotly is optional; a Matplotlib fallback is shown
+   if it is not installed).
+6. **Stochastic harvest schedule** — step plot of the annual $\gamma_{\rm MEY}$ and
+   $\gamma_{\rm MSY}$ arrays used over the simulation period.
 
 ### 3C(ii) — Attractor robustness
 
 Same Scenario C policy but with the Gaussian IC centred at $\xi_0 = 2/3$
-(international waters). The long-run equilibrium matches 3C(i), confirming the
-steady state is an attractor independent of initial conditions.
+(international waters). Includes a side-by-side biomass comparison between
+origin-inside and origin-outside cases. The long-run equilibrium matches 3C(i),
+confirming the steady state is an attractor independent of initial conditions.
+
+### 3C(iii) — Symmetric boundary placement
+
+Same Scenario C policy with the IC centred exactly at $\xi_0 = 1/3$ (the EEZ
+boundary). A three-way biomass comparison across 3C(i)/(ii)/(iii) confirms
+that the long-run attractor is independent of where the fish population starts.
 
 ---
 
@@ -408,8 +419,17 @@ $\tau = T_{\rm end}$ exactly.
 
 ### Outputs
 
-- 2D heatmaps of $x(\xi,\eta)$ at selected times with EEZ boundary line overlay.
-- Biomass time series $B(\tau) = \int_0^1\!\int_0^1 x\,d\xi\,d\eta$ and phase-space plots.
+**Main scenarios (A0–A3):**
+- 2D density heatmaps at $t \in \{0, 10, 20, 40, 60\}$ yr with the EEZ boundary
+  marked as a red dashed line.
+- Biomass time series $B_{\rm tot}(t)$, $B_{\rm in}(t)$ (inside EEZ, $y \le 200$ mi),
+  and $B_{\rm out}(t)$ (outside EEZ).
+
+**IC position study** (A2 fishing fixed; $\xi_0 \in \{100, 200, 350\}$ miles):
+- Individual heatmap grids and biomass time series for each starting position
+  (IC\_in / IC\_bnd / IC\_out).
+- Combined three-panel comparison of $B_{\rm tot}$, $B_{\rm in}$, $B_{\rm out}$
+  across all three IC positions.
 
 ---
 
@@ -438,9 +458,14 @@ $$\Delta\tau \le \min\!\left(\frac{0.2\,\min(\Delta\xi^2,\Delta\eta^2)}{4\max(\d
 
 ### Outputs
 
-- Multi-panel heatmaps of $u(\xi,\eta)$, $v(\xi,\eta)$, and dominance map
-  $\text{sign}(u - v)$ at selected times.
-- Biomass time series for both species; competition phase-space plot.
+For each scenario and snapshot time, a three-column panel is produced:
+- **Column 1** — $u(\xi,\eta)$ density heatmap (Blues colourmap).
+- **Column 2** — $v(\xi,\eta)$ density heatmap (Reds colourmap).
+- **Column 3** — $u(\xi,\eta)$ heatmap with $v$ contour lines overlaid, showing
+  spatial overlap and competition zones; EEZ boundary marked.
+
+Biomass time series showing $B_{1,\rm tot}$, $B_{1,\rm in}$, $B_{1,\rm out}$
+and $B_{2,\rm tot}$, $B_{2,\rm in}$, $B_{2,\rm out}$ for both species.
 
 ---
 
@@ -490,13 +515,11 @@ after simulation via $x = u/K$, $\xi = s/L$, $\tau = rt$. The 2D solvers
 
 ## How to Run
 
-Run **`visualsv3.ipynb`** (all §1–6 in one place) or one of the focused split
-notebooks. Open the chosen notebook and execute `Restart & Run All`; sections
-can also be run individually in order.
+Open the relevant notebook and execute `Restart & Run All`; sections can also
+be run individually in order.
 
 | Notebook | Sections |
 |---|---|
-| `visualsv3.ipynb` | §1–6 (complete) |
 | `01_ode_models.ipynb` | §1–2 only |
 | `02_1d_pde.ipynb` | §3–4 only |
 | `03_2d_ocean.ipynb` | §5–6 only |
@@ -507,11 +530,11 @@ can also be run individually in order.
 | §2 | Harvested ODE trajectories for multiple $\gamma$ values |
 | §3A | Pure-diffusion Gaussian spreading + mass conservation check |
 | §3B | Reaction-diffusion density snapshots + logistic validation |
-| §3C | EEZ fishing policy scenarios — density snapshots, biomass time series, catch plots, space-time heatmaps |
+| §3C | EEZ fishing policy scenarios — density snapshots, biomass time series, catch plots, space-time heatmaps, 3D surface plots |
 | §3D | Stochastic annual harvest schedule trajectories |
 | §4 | Two-species competition — density snapshots, biomass time series, catch plots, heatmaps |
-| §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series |
-| §6 | 2D competing species — U/V/dominance heatmaps, competition time series |
+| §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series; IC position study |
+| §6 | 2D competing species — U/V/contour-overlay heatmaps, biomass time series |
 
 The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 `plotting.py`) must reside in the same directory as the notebook.
@@ -531,8 +554,7 @@ Sections §5–6 have no external module dependencies.
 ## Project Files
 
 ```
-visualsv3.ipynb          Main notebook — all §1–6 combined
-01_ode_models.ipynb      Split notebook — §1–2 ODE models
+01_ode_models.ipynb      §1–2 ODE models
 02_1d_pde.ipynb          Split notebook — §3–4 1D PDE models
 03_2d_ocean.ipynb        Split notebook — §5–6 2D ocean models (self-contained)
 ode_models.py            Logistic and harvested ODE functions
