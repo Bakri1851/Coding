@@ -343,9 +343,9 @@ stability condition uses the maximum rate across the full schedule.
 
 ### Dimensional model (Lotka-Volterra competition)
 
-$$\frac{dN_1}{dt} = r_1 N_1\!\left(1 - \frac{N_1 + \alpha_{12}\,N_2}{K_1}\right) - h_1\,N_1$$
+$$\frac{dN_1}{dt} = r_1 N_1 \left(1 - \frac{N_1 + \alpha_{12}\,N_2}{K_1}\right) - h_1\,N_1$$
 
-$$\frac{dN_2}{dt} = r_2 N_2\!\left(1 - \frac{N_2 + \alpha_{21}\,N_1}{K_2}\right) - h_2\,N_2$$
+$$\frac{dN_2}{dt} = r_2 N_2 \left(1 - \frac{N_2 + \alpha_{21}\,N_1}{K_2}\right) - h_2\,N_2$$
 
 where $\alpha_{12}$ is the competitive effect of species 2 on species 1, and
 $\alpha_{21}$ is the competitive effect of species 1 on species 2.
