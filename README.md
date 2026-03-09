@@ -545,7 +545,7 @@ reaction–diffusion–harvesting system, isolating the effect of each parameter
 Each of the 10 parameters is perturbed to $1.1\,p$ and $0.9\,p$ while all others are held
 at their baseline value. The **central-difference sensitivity coefficient** is:
 
-$$S_{N_i}(p) = \frac{N_i^*(1.1\,p) - N_i^*(0.9\,p)}{2 \times 0.1 \times N_i^{*,\rm base}}$$
+$$S_{N_i}(p) = \frac{N_i^{*}(1.1\,p) - N_i^{*}(0.9\,p)}{2 \times 0.1 \times N_i^{*,\rm base}}$$
 
 | $|S|$ | Interpretation |
 |-------|---------------|
