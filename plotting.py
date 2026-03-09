@@ -77,6 +77,19 @@ def plot_r_sweep(
 # Fishing-scenario plots
 # ---------------------------------------------------------------------------
 
+def _extract_boundaries(res: dict) -> list[tuple[str, float, str, str]]:
+    """Return available policy boundaries in a plotting-friendly format."""
+    if "s_boundary" in res:
+        return [("\u03be_bnd", float(res["s_boundary"]), "red", ":")]
+
+    boundaries: list[tuple[str, float, str, str]] = []
+    if "s_boundary1" in res:
+        boundaries.append(("\u03be_bnd1", float(res["s_boundary1"]), "#1f77b4", ":"))
+    if "s_boundary2" in res:
+        boundaries.append(("\u03be_bnd2", float(res["s_boundary2"]), "red", "--"))
+    return boundaries
+
+
 def plot_snapshots(res: dict, title: str, K: float | None = None) -> plt.Figure:
     """Density snapshot plot for one scenario."""
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -94,8 +107,14 @@ def plot_snapshots(res: dict, title: str, K: float | None = None) -> plt.Figure:
                     color=line.get_color(), fontweight="bold")
     if K is not None:
         ax.axhline(K, color="gray", linestyle="--", linewidth=1.2, label=f"x* = {K:g}")
-    ax.axvline(res["s_boundary"], color="red", linestyle=":", linewidth=1.2,
-               label=f"\u03be_bnd = {res['s_boundary']:.3f}")
+    for bnd_label, bnd_pos, bnd_color, bnd_ls in _extract_boundaries(res):
+        ax.axvline(
+            bnd_pos,
+            color=bnd_color,
+            linestyle=bnd_ls,
+            linewidth=1.2,
+            label=f"{bnd_label} = {bnd_pos:.3f}",
+        )
     ax.set_title(f"Density Snapshots — {title}")
     ax.set_xlabel("Dimensionless position \u03be")
     ax.set_ylabel("Dimensionless density x(\u03be, \u03c4)")
@@ -315,8 +334,11 @@ def plot_snapshots_2s(
         ax.axhline(K1, color="steelblue", ls=":", lw=1.2, label=f"K1={K1:g}")
     if K2 is not None:
         ax.axhline(K2, color="tomato",    ls=":", lw=1.2, label=f"K2={K2:g}")
-    ax.axvline(res["s_boundary"], color="red", ls=":", lw=1.2,
-               label=f"ξ_bnd={res['s_boundary']:.3f}")
+    for bnd_label, bnd_pos, bnd_color, bnd_ls in _extract_boundaries(res):
+        ax.axvline(
+            bnd_pos, color=bnd_color, ls=bnd_ls, lw=1.2,
+            label=f"{bnd_label}={bnd_pos:.3f}",
+        )
 
     ax.set_title(f"Two-Species Density Snapshots — {title}")
     ax.set_xlabel("Dimensionless position ξ")
@@ -531,17 +553,21 @@ def plot_heatmap_2s(
     if "u_full" not in res or "v_full" not in res:
         raise ValueError("store_full=True required for plot_heatmap_2s")
 
-    s_arr  = res["s"]
-    t_arr  = res["t_full"]
+    s_arr = res["s"]
+    t_arr = res["t_full"]
     u_full = res["u_full"]
     v_full = res["v_full"]
-    s_bnd  = res["s_boundary"]
+    boundaries = _extract_boundaries(res)
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 
     for ax, field, sp_label in zip(axes, [u_full, v_full], ["u  (species 1)", "v  (species 2)"]):
         pcm = ax.pcolormesh(s_arr, t_arr, field, cmap="viridis", shading="auto")
-        ax.axvline(s_bnd, color="red", ls="--", lw=1.5, label=f"ξ_bnd={s_bnd:.3f}")
+        for bnd_label, bnd_pos, bnd_color, bnd_ls in boundaries:
+            ax.axvline(
+                bnd_pos, color=bnd_color, ls=bnd_ls, lw=1.5,
+                label=f"{bnd_label}={bnd_pos:.3f}",
+            )
         peak_s = s_arr[np.argmax(field, axis=1)]
         ax.plot(peak_s, t_arr, color="magenta", lw=1.8, ls="--", label="Peak core")
         ax.set_xlabel("Dimensionless position ξ")

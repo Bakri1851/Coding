@@ -16,7 +16,9 @@ All results are presented in **dimensionless form** (see
 |---|---|---|
 | `01_ode_models.ipynb` | §1–2 | ODE models only |
 | `02_1d_pde.ipynb` | §3–4 | 1D PDE — single-species and two-species |
+| `02_1d_pde_3zone.ipynb` | §4 (variant) | Three-zone EEZ fishing policy variant |
 | `03_2d_ocean.ipynb` | §5–6 | 2D ocean models (self-contained) |
+| `sensitivity.ipynb` | — | Local sensitivity analysis on the two-species model |
 
 Each notebook runs top-to-bottom (`Restart & Run All`). No external data files
 are required. The companion modules (`ode_models.py`, `pde_solver.py`,
@@ -522,7 +524,9 @@ be run individually in order.
 |---|---|
 | `01_ode_models.ipynb` | §1–2 only |
 | `02_1d_pde.ipynb` | §3–4 only |
+| `02_1d_pde_3zone.ipynb` | §4 three-zone variant |
 | `03_2d_ocean.ipynb` | §5–6 only |
+| `sensitivity.ipynb` | Standalone — run after `02_1d_pde.ipynb` |
 
 | Section | Key outputs |
 |---------|-------------|
@@ -535,6 +539,7 @@ be run individually in order.
 | §4 | Two-species competition — density snapshots, biomass time series, catch plots, heatmaps |
 | §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series; IC position study |
 | §6 | 2D competing species — U/V/contour-overlay heatmaps, biomass time series |
+| Sensitivity | OAT sensitivity analysis — results table, tornado plot, time-series comparison, parameter sweeps |
 
 The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 `plotting.py`) must reside in the same directory as the notebook.
@@ -548,6 +553,7 @@ Sections §5–6 have no external module dependencies.
 - NumPy
 - Matplotlib
 - SciPy
+- Pandas (`sensitivity.ipynb` only)
 - Plotly (optional — interactive 3D surfaces in Section 3C; static Matplotlib
   fallbacks are shown if Plotly is not installed)
 
@@ -555,8 +561,10 @@ Sections §5–6 have no external module dependencies.
 
 ```
 01_ode_models.ipynb      §1–2 ODE models
-02_1d_pde.ipynb          Split notebook — §3–4 1D PDE models
-03_2d_ocean.ipynb        Split notebook — §5–6 2D ocean models (self-contained)
+02_1d_pde.ipynb          §3–4 1D PDE models — single-species and two-species
+02_1d_pde_3zone.ipynb    §4 three-zone EEZ fishing policy variant
+03_2d_ocean.ipynb        §5–6 2D ocean models (self-contained)
+sensitivity.ipynb        Standalone sensitivity analysis for the two-species model
 ode_models.py            Logistic and harvested ODE functions
 pde_solver.py            1D spatial discretisation and reaction-diffusion PDE solver
 pde_solver_2d.py         2D spatial discretisation and PDE solver (standalone module)

@@ -433,3 +433,404 @@ def simulate_competing_rd_fishing(
         result["t_full"] = t_full[:full_idx]
 
     return result
+
+
+def simulate_rd_fishing_3zone(
+    L: float,
+    N: int,
+    D: float,
+    r: float,
+    K: float,
+    T_end: float,
+    s_boundary1: float = 12.0,
+    s_boundary2: float = 200.0,
+    h_terr_schedule: np.ndarray | None = None,
+    h_eez_schedule: np.ndarray | None = None,
+    h_intl: float = 1.0,
+    gaussian_center: float = 150.0,
+    gaussian_scale: float = 50.0,
+    snapshot_times: list[float] | None = None,
+    dt_safety: float = 0.45,
+    store_full: bool = False,
+    full_n_frames: int = 300,
+) -> dict:
+    """Simulate reaction-diffusion PDE with a three-zone fishing policy.
+
+    Zones:
+        Territorial (s <= s_boundary1) : h_terr_schedule — MEY, stochastic annual
+        EEZ         (s_boundary1 < s <= s_boundary2) : h_eez_schedule — MSY, stochastic annual
+        International (s > s_boundary2) : h_intl — fixed (unregulated)
+
+    Parameters
+    ----------
+    L, N          : domain length and grid points
+    D, r, K       : diffusion, growth rate, carrying capacity
+    T_end         : simulation end time (dimensional years)
+    s_boundary1   : inner zone boundary (territorial / EEZ split)
+    s_boundary2   : outer zone boundary (EEZ / international split)
+    h_terr_schedule : shape (n_years,) array of annual territorial harvest rates
+    h_eez_schedule  : shape (n_years,) array of annual EEZ harvest rates
+    h_intl          : fixed harvest rate in international waters (default 1.0)
+    gaussian_center : centre of Gaussian IC (miles)
+    gaussian_scale  : width parameter for Gaussian IC
+    snapshot_times  : list of times at which to store spatial snapshots
+    dt_safety       : safety factor for diffusion stability (CFL)
+    store_full      : whether to store full subsampled space-time array
+
+    Returns
+    -------
+    dict with keys: s, time, snapshots, B_terr, B_eez, B_intl, B_tot,
+                    Catch, CumCatch, ds, dt, nt, min_u,
+                    s_boundary1, s_boundary2,
+                    (+ u_full, t_full when store_full=True)
+    """
+    if snapshot_times is None:
+        snapshot_times = [0.0, 10.0, 20.0, 40.0, 60.0]
+
+    ds = L / (N - 1)
+    s = np.linspace(0.0, L, N)
+
+    # -- dt: diffusion and reaction/fishing stability -----------------------
+    dt = dt_safety * ds**2 / (2.0 * D)
+    h_terr_max = float(np.max(h_terr_schedule)) if h_terr_schedule is not None else 0.0
+    h_eez_max  = float(np.max(h_eez_schedule))  if h_eez_schedule  is not None else 0.0
+    max_rate = max(r, h_terr_max, h_eez_max, h_intl, 1e-12)
+    dt = min(dt, 0.2 / max_rate)
+    nt = int(np.ceil(T_end / dt))
+    dt = T_end / nt
+
+    # -- zone boundary indices ----------------------------------------------
+    i_terr = int(np.searchsorted(s, s_boundary1, side="right")) - 1
+    i_eez  = int(np.searchsorted(s, s_boundary2, side="right")) - 1
+
+    # -- initial condition --------------------------------------------------
+    u = np.exp(-((s - gaussian_center) / gaussian_scale) ** 2)
+
+    # -- base fishing-rate array -------------------------------------------
+    h_base = np.empty(N)
+    h_terr0 = float(h_terr_schedule[0]) if h_terr_schedule is not None else 0.0
+    h_eez0  = float(h_eez_schedule[0])  if h_eez_schedule  is not None else 0.0
+    h_base[: i_terr + 1]            = h_terr0
+    h_base[i_terr + 1 : i_eez + 1]  = h_eez0
+    h_base[i_eez + 1 :]             = h_intl
+
+    # -- full space-time storage (subsampled) ------------------------------
+    if store_full:
+        save_every = max(1, nt // full_n_frames)
+        n_saved = nt // save_every + 1
+        u_full = np.empty((n_saved, N))
+        t_full = np.empty(n_saved)
+        u_full[0] = u.copy()
+        t_full[0] = 0.0
+        full_idx = 1
+
+    # -- storage -----------------------------------------------------------
+    snap_set = set(snapshot_times)
+    snapshots: dict[float, np.ndarray] = {}
+    if 0.0 in snap_set:
+        snapshots[0.0] = u.copy()
+
+    time_arr  = np.empty(nt + 1)
+    B_terr    = np.empty(nt + 1)
+    B_eez     = np.empty(nt + 1)
+    B_intl    = np.empty(nt + 1)
+    B_tot     = np.empty(nt + 1)
+    Catch     = np.empty(nt + 1)
+    CumCatch  = np.empty(nt + 1)
+
+    time_arr[0] = 0.0
+    B_terr[0]   = np.trapezoid(u[: i_terr + 1], s[: i_terr + 1])
+    B_eez[0]    = np.trapezoid(u[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+    B_intl[0]   = np.trapezoid(u[i_eez:], s[i_eez:])
+    B_tot[0]    = np.trapezoid(u, s)
+    Catch[0]    = np.trapezoid(h_base * u, s)
+    CumCatch[0] = 0.0
+
+    min_u = float(u.min())
+
+    # -- time stepping -----------------------------------------------------
+    for n in range(1, nt + 1):
+        t_now = n * dt
+
+        # resolve fishing rates for this timestep
+        year = min(int(t_now), (len(h_terr_schedule) if h_terr_schedule is not None else 1) - 1)
+        h_arr = np.empty(N)
+        h_arr[: i_terr + 1]           = float(h_terr_schedule[year]) if h_terr_schedule is not None else 0.0
+        h_arr[i_terr + 1 : i_eez + 1] = float(h_eez_schedule[year])  if h_eez_schedule  is not None else 0.0
+        h_arr[i_eez + 1 :]            = h_intl
+
+        lap = laplacian_neumann(u, ds)
+        u = u + dt * (r * u * (1.0 - u / K) - h_arr * u + D * lap)
+
+        cur_min = float(u.min())
+        if cur_min < min_u:
+            min_u = cur_min
+
+        time_arr[n] = t_now
+        B_terr[n]   = np.trapezoid(u[: i_terr + 1], s[: i_terr + 1])
+        B_eez[n]    = np.trapezoid(u[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+        B_intl[n]   = np.trapezoid(u[i_eez:], s[i_eez:])
+        B_tot[n]    = np.trapezoid(u, s)
+        Catch[n]    = np.trapezoid(h_arr * u, s)
+        CumCatch[n] = CumCatch[n - 1] + dt * Catch[n - 1]
+
+        if store_full and n % save_every == 0 and full_idx < n_saved:
+            u_full[full_idx] = u.copy()
+            t_full[full_idx] = t_now
+            full_idx += 1
+
+        for ts in list(snap_set):
+            if abs(t_now - ts) < 0.5 * dt:
+                snapshots[ts] = u.copy()
+                snap_set.discard(ts)
+
+    if min_u < -1e-10:
+        print(f"  WARNING: min(u) = {min_u:.3e} (negative!)")
+
+    result = {
+        "s": s,
+        "time": time_arr,
+        "snapshots": snapshots,
+        "B_terr": B_terr,
+        "B_eez": B_eez,
+        "B_intl": B_intl,
+        "B_tot": B_tot,
+        "Catch": Catch,
+        "CumCatch": CumCatch,
+        "ds": ds,
+        "dt": dt,
+        "nt": nt,
+        "min_u": min_u,
+        "s_boundary1": s_boundary1,
+        "s_boundary2": s_boundary2,
+    }
+
+    if store_full:
+        result["u_full"] = u_full[:full_idx]
+        result["t_full"] = t_full[:full_idx]
+
+    return result
+
+
+def simulate_competing_rd_fishing_3zone(
+    L: float,
+    N: int,
+    D1: float,
+    D2: float,
+    r1: float,
+    r2: float,
+    K1: float,
+    K2: float,
+    alpha: float,
+    beta: float,
+    T_end: float,
+    s_boundary1: float = 12.0,
+    s_boundary2: float = 200.0,
+    h1_terr_schedule: np.ndarray | None = None,
+    h1_eez_schedule:  np.ndarray | None = None,
+    h2_terr_schedule: np.ndarray | None = None,
+    h2_eez_schedule:  np.ndarray | None = None,
+    h_intl: float = 1.0,
+    u0_gaussian_center: float = 150.0,
+    u0_gaussian_scale:  float = 50.0,
+    v0_gaussian_center: float = 200.0,
+    v0_gaussian_scale:  float = 60.0,
+    snapshot_times: list[float] | None = None,
+    dt_safety: float = 0.45,
+    store_full: bool = False,
+    full_n_frames: int = 300,
+) -> dict:
+    """Simulate two-species competing reaction-diffusion PDE with three-zone fishing.
+
+    Zones:
+        Territorial (s <= s_boundary1)              : h1/h2 terr schedule — MEY
+        EEZ         (s_boundary1 < s <= s_boundary2): h1/h2 eez schedule  — MSY
+        International (s > s_boundary2)             : h_intl (fixed, both species)
+
+    Parameters
+    ----------
+    L, N           : domain length and grid points
+    D1, D2         : diffusion coefficients
+    r1, r2         : growth rates
+    K1, K2         : carrying capacities
+    alpha          : competition coefficient (effect of v on u)
+    beta           : competition coefficient (effect of u on v)
+    T_end          : simulation end time
+    s_boundary1    : territorial / EEZ boundary
+    s_boundary2    : EEZ / international boundary
+    h1/h2_terr_schedule : annual territorial harvest rates for each species
+    h1/h2_eez_schedule  : annual EEZ harvest rates for each species
+    h_intl         : fixed international harvest rate (applied to both species)
+    u0/v0_gaussian_center/scale : Gaussian IC parameters
+
+    Returns
+    -------
+    dict with keys: s, time, snapshots_u, snapshots_v,
+                    B1_terr, B1_eez, B1_intl, B1_tot,
+                    B2_terr, B2_eez, B2_intl, B2_tot,
+                    Catch1, CumCatch1, Catch2, CumCatch2,
+                    ds, dt, nt, min_u, min_v,
+                    s_boundary1, s_boundary2,
+                    (+ u_full, v_full, t_full when store_full=True)
+    """
+    if snapshot_times is None:
+        snapshot_times = [0.0, 10.0, 20.0, 40.0, 60.0]
+
+    ds = L / (N - 1)
+    s = np.linspace(0.0, L, N)
+
+    # -- dt: stability ------------------------------------------------------
+    dt = dt_safety * ds**2 / (2.0 * max(D1, D2))
+    h1t_max = float(np.max(h1_terr_schedule)) if h1_terr_schedule is not None else 0.0
+    h1e_max = float(np.max(h1_eez_schedule))  if h1_eez_schedule  is not None else 0.0
+    h2t_max = float(np.max(h2_terr_schedule)) if h2_terr_schedule is not None else 0.0
+    h2e_max = float(np.max(h2_eez_schedule))  if h2_eez_schedule  is not None else 0.0
+    max_rate = max(r1, r2, h1t_max, h1e_max, h2t_max, h2e_max, h_intl, 1e-12)
+    dt = min(dt, 0.2 / max_rate)
+    nt = int(np.ceil(T_end / dt))
+    dt = T_end / nt
+
+    # -- zone boundary indices ----------------------------------------------
+    i_terr = int(np.searchsorted(s, s_boundary1, side="right")) - 1
+    i_eez  = int(np.searchsorted(s, s_boundary2, side="right")) - 1
+
+    # -- initial conditions -------------------------------------------------
+    u = np.exp(-((s - u0_gaussian_center) / u0_gaussian_scale) ** 2)
+    v = 0.8 * np.exp(-((s - v0_gaussian_center) / v0_gaussian_scale) ** 2)
+
+    # -- full space-time storage (subsampled) ------------------------------
+    if store_full:
+        save_every = max(1, nt // full_n_frames)
+        n_saved = nt // save_every + 1
+        u_full = np.empty((n_saved, N))
+        v_full = np.empty((n_saved, N))
+        t_full = np.empty(n_saved)
+        u_full[0] = u.copy()
+        v_full[0] = v.copy()
+        t_full[0] = 0.0
+        full_idx = 1
+
+    # -- storage -----------------------------------------------------------
+    snap_set = set(snapshot_times)
+    snapshots_u: dict[float, np.ndarray] = {}
+    snapshots_v: dict[float, np.ndarray] = {}
+    if 0.0 in snap_set:
+        snapshots_u[0.0] = u.copy()
+        snapshots_v[0.0] = v.copy()
+
+    time_arr = np.empty(nt + 1)
+    B1_terr = np.empty(nt + 1); B1_eez = np.empty(nt + 1); B1_intl = np.empty(nt + 1); B1_tot = np.empty(nt + 1)
+    B2_terr = np.empty(nt + 1); B2_eez = np.empty(nt + 1); B2_intl = np.empty(nt + 1); B2_tot = np.empty(nt + 1)
+    Catch1 = np.empty(nt + 1);  CumCatch1 = np.empty(nt + 1)
+    Catch2 = np.empty(nt + 1);  CumCatch2 = np.empty(nt + 1)
+
+    def _zone_h(terr_sched, eez_sched, year):
+        h = np.empty(N)
+        h[: i_terr + 1]           = float(terr_sched[year]) if terr_sched is not None else 0.0
+        h[i_terr + 1 : i_eez + 1] = float(eez_sched[year])  if eez_sched  is not None else 0.0
+        h[i_eez + 1 :]            = h_intl
+        return h
+
+    h1_now = _zone_h(h1_terr_schedule, h1_eez_schedule, 0)
+    h2_now = _zone_h(h2_terr_schedule, h2_eez_schedule, 0)
+
+    time_arr[0] = 0.0
+    B1_terr[0]  = np.trapezoid(u[: i_terr + 1], s[: i_terr + 1])
+    B1_eez[0]   = np.trapezoid(u[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+    B1_intl[0]  = np.trapezoid(u[i_eez:], s[i_eez:])
+    B1_tot[0]   = np.trapezoid(u, s)
+    B2_terr[0]  = np.trapezoid(v[: i_terr + 1], s[: i_terr + 1])
+    B2_eez[0]   = np.trapezoid(v[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+    B2_intl[0]  = np.trapezoid(v[i_eez:], s[i_eez:])
+    B2_tot[0]   = np.trapezoid(v, s)
+    Catch1[0]    = np.trapezoid(h1_now * u, s)
+    Catch2[0]    = np.trapezoid(h2_now * v, s)
+    CumCatch1[0] = 0.0
+    CumCatch2[0] = 0.0
+
+    min_u = float(u.min())
+    min_v = float(v.min())
+    warned = False
+
+    n_terr_years = len(h1_terr_schedule) if h1_terr_schedule is not None else 1
+
+    # -- time stepping -----------------------------------------------------
+    for n in range(1, nt + 1):
+        t_now = n * dt
+        year = min(int(t_now), n_terr_years - 1)
+
+        h1_arr = _zone_h(h1_terr_schedule, h1_eez_schedule, year)
+        h2_arr = _zone_h(h2_terr_schedule, h2_eez_schedule, year)
+
+        lap_u = laplacian_neumann(u, ds)
+        lap_v = laplacian_neumann(v, ds)
+
+        du = r1 * u * (1.0 - (u + alpha * v) / K1) - h1_arr * u + D1 * lap_u
+        dv = r2 * v * (1.0 - (v + beta  * u) / K2) - h2_arr * v + D2 * lap_v
+
+        u = u + dt * du
+        v = v + dt * dv
+
+        cur_min_u = float(u.min())
+        cur_min_v = float(v.min())
+        if (cur_min_u < -1e-10 or cur_min_v < -1e-10) and not warned:
+            print(
+                f"  WARNING: negative values at t={t_now:.3f} "
+                f"(min u={cur_min_u:.3e}, min v={cur_min_v:.3e}) — clipping"
+            )
+            warned = True
+        u = np.maximum(u, 0.0)
+        v = np.maximum(v, 0.0)
+
+        if cur_min_u < min_u:
+            min_u = cur_min_u
+        if cur_min_v < min_v:
+            min_v = cur_min_v
+
+        time_arr[n] = t_now
+        B1_terr[n]  = np.trapezoid(u[: i_terr + 1], s[: i_terr + 1])
+        B1_eez[n]   = np.trapezoid(u[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+        B1_intl[n]  = np.trapezoid(u[i_eez:], s[i_eez:])
+        B1_tot[n]   = np.trapezoid(u, s)
+        B2_terr[n]  = np.trapezoid(v[: i_terr + 1], s[: i_terr + 1])
+        B2_eez[n]   = np.trapezoid(v[i_terr : i_eez + 1], s[i_terr : i_eez + 1])
+        B2_intl[n]  = np.trapezoid(v[i_eez:], s[i_eez:])
+        B2_tot[n]   = np.trapezoid(v, s)
+        Catch1[n]    = np.trapezoid(h1_arr * u, s)
+        Catch2[n]    = np.trapezoid(h2_arr * v, s)
+        CumCatch1[n] = CumCatch1[n - 1] + dt * Catch1[n - 1]
+        CumCatch2[n] = CumCatch2[n - 1] + dt * Catch2[n - 1]
+
+        if store_full and n % save_every == 0 and full_idx < n_saved:
+            u_full[full_idx] = u.copy()
+            v_full[full_idx] = v.copy()
+            t_full[full_idx] = t_now
+            full_idx += 1
+
+        for ts in list(snap_set):
+            if abs(t_now - ts) < 0.5 * dt:
+                snapshots_u[ts] = u.copy()
+                snapshots_v[ts] = v.copy()
+                snap_set.discard(ts)
+
+    result = {
+        "s": s,
+        "time": time_arr,
+        "snapshots_u": snapshots_u,
+        "snapshots_v": snapshots_v,
+        "B1_terr": B1_terr, "B1_eez": B1_eez, "B1_intl": B1_intl, "B1_tot": B1_tot,
+        "B2_terr": B2_terr, "B2_eez": B2_eez, "B2_intl": B2_intl, "B2_tot": B2_tot,
+        "Catch1": Catch1, "CumCatch1": CumCatch1,
+        "Catch2": Catch2, "CumCatch2": CumCatch2,
+        "ds": ds, "dt": dt, "nt": nt,
+        "min_u": min_u, "min_v": min_v,
+        "s_boundary1": s_boundary1,
+        "s_boundary2": s_boundary2,
+    }
+
+    if store_full:
+        result["u_full"] = u_full[:full_idx]
+        result["v_full"] = v_full[:full_idx]
+        result["t_full"] = t_full[:full_idx]
+
+    return result
