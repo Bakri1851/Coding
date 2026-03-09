@@ -18,7 +18,7 @@ All results are presented in **dimensionless form** (see
 | `02_1d_pde.ipynb` | §3–4 | 1D PDE — single-species and two-species |
 | `02_1d_pde_3zone.ipynb` | §4 (variant) | Three-zone EEZ fishing policy variant |
 | `03_2d_ocean.ipynb` | §5–6 | 2D ocean models (self-contained) |
-| `sensitivity.ipynb` | — | Local sensitivity analysis on the two-species model |
+| `sensitivity.ipynb` | — | Local OAT sensitivity analysis, parameter sweeps, coexistence phase plane, $(r_1, H_1)$ heatmap, and 2-zone outside-harvest policy sweep on the two-species model |
 
 Each notebook runs top-to-bottom (`Restart & Run All`). No external data files
 are required. The companion modules (`ode_models.py`, `pde_solver.py`,
@@ -564,17 +564,41 @@ Equilibrium density: $N_i^* = (1/L)\int_0^L N_i(s,\, T_{\rm end})\,\mathrm{d}s$.
 ### Parameters tested
 
 $r_1,\; r_2,\; K_1,\; K_2,\; \alpha_{12},\; \alpha_{21},\; D_1,\; D_2,\; H_1,\; H_2$
-(21 total simulations: 1 baseline + 20 perturbed).
+(21 simulations for the OAT step: 1 baseline + 20 perturbed). The full notebook runs
+approximately 390 model evaluations in total across all sections (OAT, fixed-time
+response, single-parameter sweeps, phase plane, heatmap, and 2-zone policy sweep).
 
 ### Outputs
 
 - **Baseline simulation** — biomass time series and spatial snapshots at $t = 0, 25, 50, 75, 100$ yr.
 - **Results table** — equilibrium $N_1^*$ and $N_2^*$ for each ±10% perturbation with
-  sensitivity coefficients $S(N_1)$ and $S(N_2)$ per parameter.
+  sensitivity coefficients $S(N_1)$ and $S(N_2)$ per parameter, colour-coded by sign and magnitude.
 - **Tornado plot** — all 10 parameters ranked by $\max(|S_{N_1}|,\, |S_{N_2}|)$, coloured by sign.
-- **Time-series comparison** — top-3 most sensitive parameters: baseline vs ±10% trajectories.
-- **Parameter sweeps** — equilibrium densities over $r_1 \in [0.2, 0.9]$,
-  $\alpha_{12} \in [0, 1.2]$, and $H_1 \in [0, 0.45]$ (15 points each).
+- **Time-series comparison** (§7) — top-3 most sensitive parameters: full 0–100 yr trajectories of
+  both species under baseline, +10%, and −10% perturbations (3×2 subplot grid).
+- **Fixed-time response** (§8) — top-3 parameters each swept over a ±30% neighbourhood (9 evenly
+  spaced points). At each point the model is run to $T_{\rm end} = 100$ yr and the equilibrium
+  mean densities $N_1^*$, $N_2^*$, and total $N_1^*+N_2^*$ are recorded. A degree-1 polynomial
+  (`np.polyfit`) is fitted to each curve; the equation $y = mx + c$ and coefficient of
+  determination $R^2$ are annotated on every subplot, allowing a direct check on whether the
+  linear sensitivity approximation holds over the wider interval.
+- **Single-parameter sweeps** (§9.1–9.4) — $N_1^*$, $N_2^*$, and total $N_1^*+N_2^*$ plotted
+  against each of the following (15 points each, all other parameters at baseline):
+  - $r_1 \in [0.20,\, 0.90]$ yr$^{-1}$ — includes analytical reference $N_1^* = K_1(1-H_1/r_1)$
+  - $\alpha_{12} \in [0,\, 1.2]$ — vertical marker at $\alpha_{12} = 1$ (interspecific = intraspecific competition)
+  - $H_1 \in [0,\, 0.45]$ yr$^{-1}$ — vertical marker at $H_1 = r_1 = 0.5$ (extinction threshold)
+  - $K_1 \in [0.40,\, 2.0]$ — includes analytical reference $N_1^* = K_1(1-H_1/r_1)$
+- **Coexistence phase plane** (§9.5) — 13×13 grid (169 model runs) sweeping $\alpha_{12}$ and
+  $\alpha_{21}$ independently over $[0,\, 1.5]$; each cell classified as coexist (green),
+  species-2 wins (red), species-1 wins (blue), or both extinct (grey) using threshold $N_i < 0.01$.
+  Theoretical boundaries $\alpha = 1$ and baseline point marked.
+- **Two-parameter heatmap** (§9.6) — 10×10 grid (100 model runs) of $r_1 \in [0.20,\, 0.80]$
+  vs $H_1 \in [0.00,\, 0.50]$; filled contour maps of $N_1^*$ (Blues) and $N_2^*$ (Reds) shown
+  side by side, with the extinction diagonal $H_1 = r_1$ and baseline marked.
+- **Outside-harvest policy sweep** (§11) — 2-zone EEZ model: inside-EEZ harvest fixed at
+  $h_{\rm in} = 0.10$ yr$^{-1}$; outside-EEZ harvest $h_{\rm out}$ swept from 0 to 0.45 yr$^{-1}$.
+  Panel A shows total, inside-EEZ, and outside-EEZ biomass per species; Panel B shows cumulative
+  catch per species. Results saved as `sensitivity_outside_harvest_sweep.png` and `.csv`.
 
 ### Key findings
 
@@ -656,7 +680,7 @@ be run individually in order.
 | §4 | Two-species competition — density snapshots, biomass time series, catch plots, heatmaps |
 | §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series; IC position study |
 | §6 | 2D competing species — U/V/contour-overlay heatmaps, biomass time series |
-| Sensitivity | OAT sensitivity analysis — results table, tornado plot, time-series comparison, parameter sweeps |
+| Sensitivity | OAT results table, tornado plot, time-series comparison, fixed-time response with linear fit and R², single-parameter sweeps ($r_1$, $\alpha_{12}$, $H_1$, $K_1$), coexistence phase plane ($\alpha_{12}$ vs $\alpha_{21}$), $(r_1, H_1)$ heatmap, 2-zone outside-harvest policy sweep |
 
 The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 `plotting.py`) must reside in the same directory as the notebook.
