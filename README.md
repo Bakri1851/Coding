@@ -379,6 +379,66 @@ competitive exclusion occurs when $\alpha_{12}\alpha_{21} > 1$.
 
 ---
 
+## Three-Zone Maritime Fishing Policy (1D Variant)
+
+*Notebook: `02_1d_pde_3zone.ipynb`*
+
+Extends Sections 3C and 4 to a **three-tier maritime regulatory structure** (reflecting UNCLOS),
+splitting the 1D offshore domain $s \in [0, 600]$ miles into:
+
+| Zone | Distance | $\xi$ range | Harvest policy | Typical $\gamma$ |
+|------|----------|-------------|----------------|------------------|
+| Territorial waters | 0–12 miles | $[0,\; 1/50]$ | MEY (economic yield) | $\sim \mathrm{Uniform}(0.28,\, 0.34)$ |
+| EEZ | 12–200 miles | $(1/50,\; 1/3]$ | MSY (sustainable yield) | $\sim \mathrm{Uniform}(0.45,\, 0.55)$ |
+| International waters | > 200 miles | $(1/3,\; 1]$ | Unregulated | $\gamma = 1$ (fixed) |
+
+With $\gamma_{\rm intl} = 1$, the local reaction term in international waters becomes
+$x(1-x) - x = -x^2 < 0$, so the international population is sustained **entirely by diffusive
+spillover** from the regulated inner zones, producing a sharp density gradient at $\xi = 1/3$.
+
+### Harvest schedules
+
+Rates are drawn annually from stochastic schedules shared across all sub-cases:
+
+$$\gamma_{\rm terr} = \tfrac{1}{2}\!\left(1 - \sqrt{1-f}\right), \quad f \sim \mathrm{Uniform}(0.80, 0.90)$$
+$$\gamma_{\rm EEZ} \sim \mathrm{Uniform}(0.45, 0.55), \qquad \gamma_{\rm intl} = 1$$
+
+### Section A — Single species, attractor robustness
+
+Three Gaussian ICs placed in each zone:
+
+| Sub-case | IC centre | Zone |
+|----------|-----------|------|
+| A(i)   | $s = 6$ miles   ($\xi = 0.01$) | Territorial |
+| A(ii)  | $s = 100$ miles ($\xi = 1/6$)  | EEZ |
+| A(iii) | $s = 400$ miles ($\xi = 2/3$)  | International |
+
+All three converge to the same long-run attractor, confirming spatial equilibrium is
+independent of initial position.
+
+### Section B — Two-species competition
+
+Balanced Lotka-Volterra competition ($\alpha_{12} = \alpha_{21} = 0.5$) with three initial
+placement configurations:
+
+| Sub-case | Species 1 IC | Species 2 IC |
+|----------|-------------|-------------|
+| B(i)   | 6 miles (territorial) | 100 miles (EEZ) |
+| B(ii)  | 100 miles (EEZ) | 400 miles (international) |
+| B(iii) | 200 miles (EEZ/intl boundary) | 200 miles (EEZ/intl boundary) |
+
+Each species carries independent stochastic harvest schedules per zone.
+
+### Outputs
+
+- Spatial density snapshots at $\tau = 0, 10, 25, 50, 100$ with both zone boundaries marked.
+- Per-zone biomass time series: $B_{\rm terr}$, $B_{\rm EEZ}$, $B_{\rm intl}$, $B_{\rm tot}$.
+- Instantaneous and cumulative catch rates per zone.
+- Space-time heatmaps showing diffusive spillover into international waters.
+- Attractor comparison across all three Section A initial conditions.
+
+---
+
 ## 5 — 2D Reaction-Diffusion (Ocean Map): Single Species
 
 ### Governing equation (dimensionless)
@@ -468,6 +528,63 @@ For each scenario and snapshot time, a three-column panel is produced:
 
 Biomass time series showing $B_{1,\rm tot}$, $B_{1,\rm in}$, $B_{1,\rm out}$
 and $B_{2,\rm tot}$, $B_{2,\rm in}$, $B_{2,\rm out}$ for both species.
+
+---
+
+## Sensitivity Analysis
+
+*Notebook: `sensitivity.ipynb`*
+
+Performs a **local (one-at-a-time) sensitivity analysis** on the two-species
+competition–diffusion–harvesting model of Section 4. Harvesting is applied uniformly across
+the full domain (inside and outside the EEZ) so the model reduces to a spatially homogeneous
+reaction–diffusion–harvesting system, isolating the effect of each parameter independently.
+
+### Method
+
+Each of the 10 parameters is perturbed to $1.1\,p$ and $0.9\,p$ while all others are held
+at their baseline value. The **central-difference sensitivity coefficient** is:
+
+$$S_{N_i}(p) = \frac{N_i^*(1.1\,p) - N_i^*(0.9\,p)}{2 \times 0.1 \times N_i^{*,\rm base}}$$
+
+| $|S|$ | Interpretation |
+|-------|---------------|
+| $> 1$ | Amplifying — output varies proportionally more than the parameter |
+| $= 1$ | Proportional |
+| $< 1$ | Attenuating |
+| $S < 0$ | Opposing — increasing the parameter decreases the output |
+
+### Baseline parameters
+
+$r_1 = r_2 = 0.5$, $K_1 = K_2 = 1$, $\alpha_{12} = \alpha_{21} = 0.5$,
+$D_1 = D_2 = 10$, $H_1 = H_2 = 0.1$; domain $L = 600$ miles, $T_{\rm end} = 100$ yr.
+
+Equilibrium density: $N_i^* = (1/L)\int_0^L N_i(s,\, T_{\rm end})\,\mathrm{d}s$.
+
+### Parameters tested
+
+$r_1,\; r_2,\; K_1,\; K_2,\; \alpha_{12},\; \alpha_{21},\; D_1,\; D_2,\; H_1,\; H_2$
+(21 total simulations: 1 baseline + 20 perturbed).
+
+### Outputs
+
+- **Baseline simulation** — biomass time series and spatial snapshots at $t = 0, 25, 50, 75, 100$ yr.
+- **Results table** — equilibrium $N_1^*$ and $N_2^*$ for each ±10% perturbation with
+  sensitivity coefficients $S(N_1)$ and $S(N_2)$ per parameter.
+- **Tornado plot** — all 10 parameters ranked by $\max(|S_{N_1}|,\, |S_{N_2}|)$, coloured by sign.
+- **Time-series comparison** — top-3 most sensitive parameters: baseline vs ±10% trajectories.
+- **Parameter sweeps** — equilibrium densities over $r_1 \in [0.2, 0.9]$,
+  $\alpha_{12} \in [0, 1.2]$, and $H_1 \in [0, 0.45]$ (15 points each).
+
+### Key findings
+
+- **$K_1$, $K_2$** (carrying capacities) have the largest sensitivity ($S \approx 0.8$):
+  equilibrium scales near-proportionally with habitat quality.
+- **$H_1$, $H_2$** (harvesting rates) show strong negative self-sensitivity and positive
+  cross-sensitivity — harvesting one species reduces competition pressure and benefits the other
+  (**competitive release**).
+- **$D_1$, $D_2$** (diffusion) have near-zero sensitivity under uniform harvesting:
+  diffusion redistributes biomass spatially but does not alter the total equilibrium biomass.
 
 ---
 
