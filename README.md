@@ -56,7 +56,7 @@ only NumPy and Matplotlib and have no external module dependencies.
 - $N(t)$ — dimensional population size or biomass (individuals or kg).
 - $x(\tau)$ — dimensionless population fraction $x = N/K \in [0,1]$.
 - $u(s,t)$ — dimensional fish density (biomass per unit offshore distance), where
-  $s \in [0, L]$ is the offshore distance and $L = 600\,\text{km}$ is the domain length.
+  $s \in [0, L]$ is the offshore distance and $L = 600\,\text{miles}$ is the domain length.
 - $x(\xi,\tau)$ — dimensionless density $x = u/K$ at dimensionless position
   $\xi = s/L \in [0,1]$.
 - $x(\xi,\eta,\tau)$ — dimensionless density on the 2D grid (Sections 5–6),
@@ -472,8 +472,8 @@ $\tau = T_{\rm end}$ exactly.
 
 ### Scenarios
 
-| Scenario | $\gamma_{\rm in}$ (EEZ, $\xi \le 1/3$) | $\gamma_{\rm out}$ (offshore, $\xi > 1/3$) |
-|---|---|---|
+| Scenario | $\gamma_{\rm in}$ (EEZ, $\xi \le 1/3$) | $\gamma_{\rm out}$ (offshore, $\xi > 1/3$) | Description |
+|---|---|---|---|
 | **A0** | 0 | 0 | No fishing baseline |
 | **A1** | $\gamma_{\rm MEY}$ | $\gamma_{\rm MEY}$ | Uniform MEY everywhere |
 | **A2** | 0 | $\gamma_{\rm MSY}$ | EEZ protected, offshore fished at MSY |
@@ -484,10 +484,10 @@ $\tau = T_{\rm end}$ exactly.
 **Main scenarios (A0–A3):**
 - 2D density heatmaps at $t \in \{0, 10, 20, 40, 60\}$ yr with the EEZ boundary
   marked as a red dashed line.
-- Biomass time series $B_{\rm tot}(t)$, $B_{\rm in}(t)$ (inside EEZ, $y \le 200$ mi),
+- Biomass time series $B_{\rm tot}(t)$, $B_{\rm in}(t)$ (inside EEZ, $\xi \le 1/3$),
   and $B_{\rm out}(t)$ (outside EEZ).
 
-**IC position study** (A2 fishing fixed; $\xi_0 \in \{100, 200, 350\}$ miles):
+**IC position study** (A2 fishing fixed; $s_0 \in \{100, 200, 350\}$ miles):
 - Individual heatmap grids and biomass time series for each starting position
   (IC\_in / IC\_bnd / IC\_out).
 - Combined three-panel comparison of $B_{\rm tot}$, $B_{\rm in}$, $B_{\rm out}$
@@ -593,8 +593,8 @@ $r_1,\; r_2,\; K_1,\; K_2,\; \alpha_{12},\; \alpha_{21},\; D_1,\; D_2,\; H_1,\; 
 The dimensionless offshore axis $\xi = s/L \in [0,1]$ is shared by all spatial sections:
 
 - $\xi = 0$ — coastline
-- $\xi = 1$ — far offshore boundary ($s = L = 600\,\text{km}$)
-- $\xi_{\rm bnd} = 1/3$ — 200-mile EEZ limit ($s = 200\,\text{km}$)
+- $\xi = 1$ — far offshore boundary ($s = L = 600\,\text{miles}$)
+- $\xi_{\rm bnd} = 1/3$ — 200-mile EEZ limit ($s = 200\,\text{miles}$)
 
 **1D boundary conditions (§3–4):** no-flux Neumann at both ends,
 $\partial x/\partial\xi = 0$, implemented via ghost-point finite differences (see §3A).
