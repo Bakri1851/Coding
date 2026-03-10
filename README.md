@@ -595,6 +595,14 @@ response, single-parameter sweeps, phase plane, heatmap, and 2-zone policy sweep
 - **Two-parameter heatmap** (§9.6) — 10×10 grid (100 model runs) of $r_1 \in [0.20,\, 0.80]$
   vs $H_1 \in [0.00,\, 0.50]$; filled contour maps of $N_1^*$ (Blues) and $N_2^*$ (Reds) shown
   side by side, with the extinction diagonal $H_1 = r_1$ and baseline marked.
+- **Joint harvest rate sweep** (§8.5) — $H_1 = H_2 = H$ swept jointly over
+  $0 \le H < \min(r_1, r_2)$, mimicking a policy that applies equal pressure to both species
+  simultaneously. Equilibrium densities $N_1^*$, $N_2^*$, and total $N_1^*+N_2^*$ plotted
+  against $H$ with linear fits and $R^2$ values.
+- **Harvest effect on phase plane** — the $\alpha_{12}$ vs $\alpha_{21}$ coexistence grid
+  repeated at four harvest levels $H_1 = H_2 = H \in \{0,\,0.10,\,0.20,\,0.35\}$ in a
+  $2\times 2$ panel, showing how increasing fishing pressure contracts the green coexistence
+  zone and expands the single-winner regions.
 - **Outside-harvest policy sweep** (§11) — 2-zone EEZ model: inside-EEZ harvest fixed at
   $h_{\rm in} = 0.10$ yr$^{-1}$; outside-EEZ harvest $h_{\rm out}$ swept from 0 to 0.45 yr$^{-1}$.
   Panel A shows total, inside-EEZ, and outside-EEZ biomass per species; Panel B shows cumulative
@@ -680,7 +688,7 @@ be run individually in order.
 | §4 | Two-species competition — density snapshots, biomass time series, catch plots, heatmaps |
 | §5 | 2D single-species ocean map — heatmaps with EEZ overlay, biomass time series; IC position study |
 | §6 | 2D competing species — U/V/contour-overlay heatmaps, biomass time series |
-| Sensitivity | OAT results table, tornado plot, time-series comparison, fixed-time response with linear fit and R², single-parameter sweeps ($r_1$, $\alpha_{12}$, $H_1$, $K_1$), coexistence phase plane ($\alpha_{12}$ vs $\alpha_{21}$), $(r_1, H_1)$ heatmap, 2-zone outside-harvest policy sweep |
+| Sensitivity | OAT results table, tornado plot, time-series comparison, fixed-time response with linear fit and R², single-parameter sweeps ($r_1$, $\alpha_{12}$, $H_1$, $K_1$), joint harvest sweep (§8.5), coexistence phase plane ($\alpha_{12}$ vs $\alpha_{21}$) at four harvest levels, $(r_1, H_1)$ heatmap, 2-zone outside-harvest policy sweep |
 
 The companion modules (`ode_models.py`, `pde_solver.py`, `validation.py`,
 `plotting.py`) must reside in the same directory as the notebook.
