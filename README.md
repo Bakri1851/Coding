@@ -83,7 +83,116 @@ $$\delta = \frac{D}{rL^2} = \frac{10}{0.5 \times 360000} \approx 5.56 \times 10^
 
 ---
 
-## 1 — Logistic Fish Population Model (Time-Only ODE)
+## Harvest Methodology
+
+Harvest is implemented everywhere as a **proportional removal term**. In the ODEs
+this appears as $-hN$; in the PDEs it appears as $-h(s,t)\,u$ in 1D and
+$-h(y,t)\,u$ in 2D. This means the model removes a fraction of the **current**
+biomass per unit time rather than imposing a fixed quota. If biomass is high,
+the same harvest rate removes more fish; if biomass is low, the removal falls
+automatically.
+
+For the spatial models, harvest pressure is assigned by **management zone**:
+inside the regulated region one rate is used, and outside it another rate is
+used. In the 2D ocean models this zoning depends only on offshore position, so
+fishing pressure is uniform alongshore within a given management band.
+
+In the stochastic-policy experiments, annual harvest schedules are **sampled once
+at the start of the simulation** and then held fixed for that run. During time
+stepping, the active annual rate is selected by the current year index
+$n = \lfloor t \rfloor$. The model therefore does not redraw harvest on the fly
+inside the PDE loop. This design keeps each run reproducible, allows the same
+realised schedule to be reused across scenarios, and lets the time step be set
+using the maximum planned harvest rate in the schedule.
+
+Reported catch is computed directly from the harvest term. The instantaneous
+catch rate is the spatial integral of harvest pressure times local biomass, e.g.
+$C(t) = \int h(s,t)\,u(s,t)\,\mathrm{d}s$ in 1D, with species-wise analogues in
+the two-species models. Cumulative catch is then the time integral of this catch
+rate over the simulation horizon.
+
+In the 2D ocean models the same methodology is used with a y-dependent harvest
+profile: one rate on the inshore side of the EEZ boundary, another offshore, and
+an optional offshore pulse for temporary policy shocks.
+
+---
+
+## Diffusion Methodology
+
+Diffusion is the model's movement mechanism. It is implemented as a
+**deterministic Laplacian dispersal term**, not as a stochastic random walk in
+the solver. Conceptually it represents many local fish movements averaged into a
+smooth flux from high-density regions toward low-density regions.
+
+In the 1D PDEs, diffusion appears as:
+
+$$\frac{\partial u}{\partial t} = \cdots + D\,\frac{\partial^2 u}{\partial s^2}$$
+
+or, in the dimensionless notation used in the write-up,
+
+$$\frac{\partial x}{\partial \tau} = \cdots + \delta\,\frac{\partial^2 x}{\partial \xi^2}$$
+
+In the 2D PDEs, the same idea becomes a two-dimensional Laplacian:
+
+$$\frac{\partial U}{\partial t} = \cdots + D\left(\frac{\partial^2 U}{\partial \xi^2} + \frac{\partial^2 U}{\partial \eta^2}\right)$$
+
+Diffusion **redistributes** biomass but does not create biomass on its own. In
+the diffusion-only sanity checks, total biomass should therefore remain constant
+up to numerical error. In harvested runs, diffusion interacts with management by
+creating **spillover**: fish can move from lightly fished zones into more
+heavily fished zones across the policy boundary.
+
+Numerically, the diffusion term is discretised with second-order central finite
+differences and advanced in time with **explicit Euler**.
+
+---
+
+## Boundary Condition Methodology
+
+The 1D offshore PDE domain uses **no-flux Neumann boundaries** at both ends:
+
+$$\frac{\partial u}{\partial s}(0,t) = 0, \qquad \frac{\partial u}{\partial s}(L,t) = 0$$
+
+This means fish do not leave the computational domain through the shoreline edge
+or the outer offshore edge. The boundary is reflective in the continuum sense:
+the density gradient normal to the boundary is zero, so there is no net diffusive
+flux across it.
+
+The 2D PDEs combine two different boundary assumptions:
+
+- **Offshore direction $\xi$**: no-flux Neumann boundaries at the inshore and offshore edges.
+- **Alongshore direction $\eta$**: periodic boundaries, so the left and right map
+  edges are identified and biomass exiting one side re-enters on the other.
+
+Management boundaries such as the EEZ are **policy boundaries only**, not
+physical walls. The harvest rate changes when crossing them, but diffusion still
+acts across the boundary, which is why spillover can occur between zones.
+
+Numerically, the 1D no-flux condition is enforced with ghost-point Neumann
+closures. In 2D, periodic alongshore boundaries are implemented with wrapped
+neighbours, while offshore no-flux boundaries are implemented with reflected
+neighbours.
+
+---
+
+## Other Modelling Choices
+
+- **Initial conditions**: 1D runs typically start from Gaussian or uniform
+  density profiles so that spreading and attractor behaviour are easy to
+  interpret. The 2D runs use localised blobs or noisy baselines, with optional
+  random seeds to make repeated runs reproducible.
+- **Time stepping**: all PDE solvers use explicit Euler time stepping. The time
+  step is chosen from the most restrictive applicable stability constraint,
+  combining diffusion limits with reaction/harvest limits where relevant, and is
+  then adjusted so the final step lands exactly at the requested $T_{\rm end}$.
+- **Numerical safeguards**: the code tracks negative densities produced by the
+  explicit scheme. The newer 2D and competing-species solvers clip small
+  numerical undershoots to zero, and the validation checks include diffusion-only
+  mass-conservation tests plus uniform-state consistency tests.
+
+---
+
+## 1 - Logistic Fish Population Model (Time-Only ODE)
 
 ### Dimensional model
 
@@ -332,12 +441,19 @@ that the long-run attractor is independent of where the fish population starts.
 
 ---
 
-## 3D — Stochastic Annual Harvest Schedules
+## 3D - Stochastic Annual Harvest Schedules
 
 Extends Section 3C by replacing fixed $\gamma_{\rm in}$/$\gamma_{\rm out}$ with
 **pre-generated annual arrays** of dimensionless rates. The active rate for year
 $n$ is selected by $n = \lfloor t \rfloor$ (with $t$ in years). The time-step
 stability condition uses the maximum rate across the full schedule.
+
+The important methodological point is that these annual arrays are drawn **once**
+before the PDE time stepping begins. The solver then reads the precomputed value
+for the current year; it does not redraw a new random harvest level during the
+run. The same realised schedule can therefore be reused across multiple
+scenarios so that differences in outcomes are driven by policy or initial
+condition changes rather than by a different random harvest path.
 
 ---
 
@@ -402,6 +518,11 @@ Rates are drawn annually from stochastic schedules shared across all sub-cases:
 
 $$\gamma_{\rm terr} = \tfrac{1}{2}\!\left(1 - \sqrt{1-f}\right), \quad f \sim \mathrm{Uniform}(0.80, 0.90)$$
 $$\gamma_{\rm EEZ} \sim \mathrm{Uniform}(0.45, 0.55), \qquad \gamma_{\rm intl} = 1$$
+
+As in Section 3D, these schedules are pre-generated at the start of the
+experiment and then indexed by year during the solve. They are shared across the
+sub-cases so that spatial-attractor comparisons are made under the same realised
+harvest history.
 
 ### Section A — Single species, attractor robustness
 
