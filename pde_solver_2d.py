@@ -640,6 +640,7 @@ def simulate_2d_single(r, K, D, nx, ny, dx, dy, T_end,
 def simulate_2d_two_species(
         r1, K1, D1, r2, K2, D2, a12, a21,
         h1_params, h2_params,
+        pulse1=None, pulse2=None,
         nx, ny, dx, dy,
         T_end, snapshot_times, y_boundary, seed=42,
         cx_U0=None, cy_U0=None, cx_V0=None, cy_V0=None, sig_ic=40.0):
@@ -659,6 +660,8 @@ def simulate_2d_two_species(
     a21          : float  competition coefficient of U on V
     h1_params    : dict   {'h_in': float, 'h_out': float}  fishing on U
     h2_params    : dict   {'h_in': float, 'h_out': float}  fishing on V
+    pulse1       : dict or None  optional offshore pulse for U
+    pulse2       : dict or None  optional offshore pulse for V
     nx, ny       : int    grid dimensions
     dx, dy       : float  grid spacing (miles)
     T_end        : float  total simulation time
@@ -705,10 +708,12 @@ def simulate_2d_two_species(
     U = np.maximum(U, 0.0)
     V = np.maximum(V, 0.0)
 
-    h1_y = np.where(y_grid <= y_boundary,
-                    h1_params['h_in'], h1_params['h_out'])[:, np.newaxis]
-    h2_y = np.where(y_grid <= y_boundary,
-                    h2_params['h_in'], h2_params['h_out'])[:, np.newaxis]
+    h1_in = h1_params['h_in']
+    h1_out = h1_params['h_out']
+    h2_in = h2_params['h_in']
+    h2_out = h2_params['h_out']
+    pulse1_cfg = h1_params.get('pulse') if pulse1 is None else pulse1
+    pulse2_cfg = h2_params.get('pulse') if pulse2 is None else pulse2
 
     snap_set = sorted(snapshot_times)
     snap_idx = 0
@@ -738,12 +743,18 @@ def simulate_2d_two_species(
 
     for n in range(1, nt + 1):
         t_now = n * dt
+        h1_y = fishing_profile_y(y_grid, t_now - 0.5 * dt,
+                                 y_boundary, h1_in, h1_out, pulse1_cfg)
+        h2_y = fishing_profile_y(y_grid, t_now - 0.5 * dt,
+                                 y_boundary, h2_in, h2_out, pulse2_cfg)
+        h1_2d = h1_y[:, np.newaxis]
+        h2_2d = h2_y[:, np.newaxis]
 
         lapU = laplacian_2d_periodicx_neumanny(U, dx, dy)
         lapV = laplacian_2d_periodicx_neumanny(V, dx, dy)
 
-        dU = r1 * U * (1.0 - (U + a12 * V) / K1) - h1_y * U + D1 * lapU
-        dV = r2 * V * (1.0 - (V + a21 * U) / K2) - h2_y * V + D2 * lapV
+        dU = r1 * U * (1.0 - (U + a12 * V) / K1) - h1_2d * U + D1 * lapU
+        dV = r2 * V * (1.0 - (V + a21 * U) / K2) - h2_2d * V + D2 * lapV
 
         U = U + dt * dU
         V = V + dt * dV
