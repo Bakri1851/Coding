@@ -80,7 +80,7 @@ def plot_r_sweep(
 def _extract_boundaries(res: dict) -> list[tuple[str, float, str, str]]:
     """Return available policy boundaries in a plotting-friendly format."""
     if "s_boundary" in res:
-        return [("\u03be_bnd", float(res["s_boundary"]), "red", ":")]
+        return [("EEZ (200-mile limit)", float(res["s_boundary"]), "red", ":")]
 
     boundaries: list[tuple[str, float, str, str]] = []
     if "s_boundary1" in res:
@@ -88,6 +88,26 @@ def _extract_boundaries(res: dict) -> list[tuple[str, float, str, str]]:
     if "s_boundary2" in res:
         boundaries.append(("\u03be_bnd2", float(res["s_boundary2"]), "red", "--"))
     return boundaries
+
+
+def _add_harvest_start_marker(ax: plt.Axes, res: dict) -> None:
+    """Draw a vertical marker at harvest onset when present."""
+    harvest_start_time = float(res.get("harvest_start_time", 0.0))
+    has_catch = False
+    if "Catch" in res:
+        has_catch = bool(np.any(np.asarray(res["Catch"]) > 0.0))
+    elif "Catch1" in res or "Catch2" in res:
+        catch1 = np.asarray(res.get("Catch1", 0.0))
+        catch2 = np.asarray(res.get("Catch2", 0.0))
+        has_catch = bool(np.any(catch1 > 0.0) or np.any(catch2 > 0.0))
+    if harvest_start_time > 0.0 and has_catch:
+        ax.axvline(
+            harvest_start_time,
+            color="black",
+            linestyle="--",
+            linewidth=1.2,
+            label=f"Harvest starts (\u03c4={harvest_start_time:.2f})",
+        )
 
 
 def plot_snapshots(res: dict, title: str, K: float | None = None) -> plt.Figure:
@@ -130,6 +150,7 @@ def plot_biomass(res: dict, title: str) -> plt.Figure:
     ax.plot(res["time"], res["B_in"], linewidth=2.0, label="B_in (\u03be \u2264 \u03be_bnd)")
     ax.plot(res["time"], res["B_out"], linewidth=2.0, label="B_out (\u03be > \u03be_bnd)")
     ax.plot(res["time"], res["B_tot"], linewidth=2.0, linestyle="--", label="B_tot (total)")
+    _add_harvest_start_marker(ax, res)
     ax.set_title(f"Biomass Time Series — {title}")
     ax.set_xlabel("Dimensionless time \u03c4")
     ax.set_ylabel("Dimensionless biomass \u222bx d\u03be")
@@ -145,6 +166,7 @@ def plot_catch(res: dict, title: str) -> plt.Figure:
 
     color_catch = "tab:blue"
     ax1.plot(res["time"], res["Catch"], linewidth=2.0, color=color_catch, label="Catch rate")
+    _add_harvest_start_marker(ax1, res)
     ax1.set_xlabel("Dimensionless time \u03c4")
     ax1.set_ylabel("Dimensionless catch rate", color=color_catch)
     ax1.tick_params(axis="y", labelcolor=color_catch)
@@ -286,7 +308,7 @@ def plot_heatmap(
     if s_boundary is not None:
         ax.axvline(
             s_boundary, color="red", linestyle="--", linewidth=1.5,
-            label=f"\u03be_boundary = {s_boundary:.3f}",
+            label="EEZ (200-mile limit)",
         )
     # Trace peak density location over time
     peak_s = s_arr[np.argmax(u_full, axis=1)]
@@ -362,6 +384,7 @@ def plot_biomass_2s(res: dict, title: str) -> plt.Figure:
     ax.plot(res["time"], res["B2_tot"], color="tomato",     lw=2.0, label="B2_tot (sp.2 total)")
     ax.plot(res["time"], res["B2_in"],  color="tomato",     lw=1.2, ls="--", label="B2_in  (sp.2 EEZ)")
     ax.plot(res["time"], res["B2_out"], color="tomato",     lw=1.2, ls=":",  label="B2_out (sp.2 intl)")
+    _add_harvest_start_marker(ax, res)
 
     ax.set_title(f"Two-Species Biomass — {title}")
     ax.set_xlabel("Dimensionless time τ")
@@ -378,6 +401,7 @@ def plot_catch_2s(res: dict, title: str) -> plt.Figure:
 
     ax1.plot(res["time"], res["Catch1"], color="steelblue", lw=2.0, label="Catch rate sp.1")
     ax1.plot(res["time"], res["Catch2"], color="tomato",    lw=2.0, label="Catch rate sp.2")
+    _add_harvest_start_marker(ax1, res)
     ax1.set_xlabel("Dimensionless time τ")
     ax1.set_ylabel("Dimensionless catch rate")
     ax1.grid(True, alpha=0.3)
@@ -566,7 +590,7 @@ def plot_heatmap_2s(
         for bnd_label, bnd_pos, bnd_color, bnd_ls in boundaries:
             ax.axvline(
                 bnd_pos, color=bnd_color, ls=bnd_ls, lw=1.5,
-                label=f"{bnd_label}={bnd_pos:.3f}",
+                label=bnd_label,
             )
         peak_s = s_arr[np.argmax(field, axis=1)]
         ax.plot(peak_s, t_arr, color="magenta", lw=1.8, ls="--", label="Peak core")

@@ -43,6 +43,7 @@ def simulate_rd_fishing(
     full_n_frames: int = 300,
     h_in_schedule: np.ndarray | None = None,
     h_out_schedule: np.ndarray | None = None,
+    harvest_start_time: float = 0.0,
 ) -> dict:
     """Simulate reaction-diffusion PDE with spatially varying fishing.
 
@@ -61,10 +62,14 @@ def simulate_rd_fishing(
     gaussian_scale: width parameter for Gaussian IC
     snapshot_times: list of times at which to store spatial snapshots
     dt_safety     : safety factor for diffusion stability
-    h_in_schedule : shape (n_years,) array of annual inshore harvest rates;
-                    overrides h_in when provided (year = floor(t))
-    h_out_schedule: shape (n_years,) array of annual offshore harvest rates;
-                    overrides h_out when provided (year = floor(t))
+    h_in_schedule : shape (n_tau_years,) array of inshore harvest rates;
+                    when provided, each entry is applied once as a pulse at
+                    tau = 0, 1, 2, ... after harvest_start_time
+    h_out_schedule: shape (n_tau_years,) array of offshore harvest rates;
+                    when provided, each entry is applied once as a pulse at
+                    tau = 0, 1, 2, ... after harvest_start_time
+    harvest_start_time : harvesting remains zero before this dimensional time;
+                         pulse tau-year 0 occurs at this time
 
     Returns
     -------
@@ -102,6 +107,20 @@ def simulate_rd_fishing(
     h_base = np.empty(N)
     h_base[: i_bnd + 1] = h_in
     h_base[i_bnd + 1 :] = h_out
+    h_zero = np.zeros(N)
+
+    if h_in_schedule is not None:
+        h_in_schedule = np.asarray(h_in_schedule, dtype=float)
+        h_out_schedule = np.asarray(h_out_schedule, dtype=float)
+        if h_in_schedule.shape != h_out_schedule.shape:
+            raise ValueError("h_in_schedule and h_out_schedule must have the same shape")
+        schedule_event_times = harvest_start_time + np.arange(h_in_schedule.size, dtype=float) / r
+        # Match one tau-year of continuous harvest with an equivalent pulse survival factor.
+        in_pulse_survival = np.exp(-h_in_schedule / r)
+        out_pulse_survival = np.exp(-h_out_schedule / r)
+        next_schedule_idx = 0
+    else:
+        schedule_event_times = None
 
     # -- full space-time storage (subsampled) ----------------------------
     if store_full:
@@ -130,30 +149,55 @@ def simulate_rd_fishing(
     B_in[0] = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
     B_out[0] = np.trapezoid(u[i_bnd:], s[i_bnd:])
     B_tot[0] = np.trapezoid(u, s)
-    Catch[0] = np.trapezoid(h_base * u, s)
+    Catch[0] = 0.0 if harvest_start_time > 0.0 else np.trapezoid(h_base * u, s)
     CumCatch[0] = 0.0
 
     min_u = float(u.min())
 
+    def advance_state(delta_t: float, harvest_arr: np.ndarray) -> None:
+        nonlocal u
+        if delta_t <= 0.0:
+            return
+        lap = laplacian_neumann(u, ds)
+        u = u + delta_t * (r * u * (1.0 - u / K) - harvest_arr * u + D * lap)
+
     # -- time stepping ---------------------------------------------------
     for n in range(1, nt + 1):
+        t_prev = (n - 1) * dt
         t_now = n * dt
+        pulse_catch = 0.0
 
-        # fishing rate at this time
-        if h_in_schedule is not None:
-            # annual stochastic schedule: look up current year
-            year = min(int(t_now), len(h_in_schedule) - 1)
-            h_arr = np.empty(N)
-            h_arr[: i_bnd + 1] = h_in_schedule[year]
-            h_arr[i_bnd + 1 :] = h_out_schedule[year]
-        elif pulse and pulse["t_start"] <= t_now <= pulse["t_end"]:
-            h_arr = h_base.copy()
-            h_arr[i_bnd + 1 :] = pulse["h_out_pulse"]
+        if schedule_event_times is not None:
+            t_step = t_prev
+            while (
+                next_schedule_idx < len(schedule_event_times)
+                and schedule_event_times[next_schedule_idx] <= t_now + 1e-12
+            ):
+                event_time = schedule_event_times[next_schedule_idx]
+                if event_time > t_step:
+                    advance_state(event_time - t_step, h_zero)
+                    t_step = event_time
+
+                u_before = u.copy()
+                u[: i_bnd + 1] *= in_pulse_survival[next_schedule_idx]
+                u[i_bnd + 1 :] *= out_pulse_survival[next_schedule_idx]
+                pulse_catch += np.trapezoid(u_before - u, s)
+                next_schedule_idx += 1
+
+            if t_now > t_step:
+                advance_state(t_now - t_step, h_zero)
+            h_arr = h_zero
         else:
-            h_arr = h_base
-
-        lap = laplacian_neumann(u, ds)
-        u = u + dt * (r * u * (1.0 - u / K) - h_arr * u + D * lap)
+            # fishing rate at this time
+            t_fish = t_now - harvest_start_time
+            if t_fish < 0.0:
+                h_arr = h_zero
+            elif pulse and pulse["t_start"] <= t_fish <= pulse["t_end"]:
+                h_arr = h_base.copy()
+                h_arr[i_bnd + 1 :] = pulse["h_out_pulse"]
+            else:
+                h_arr = h_base
+            advance_state(dt, h_arr)
 
         # diagnostics
         cur_min = float(u.min())
@@ -164,8 +208,12 @@ def simulate_rd_fishing(
         B_in[n] = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
         B_out[n] = np.trapezoid(u[i_bnd:], s[i_bnd:])
         B_tot[n] = np.trapezoid(u, s)
-        Catch[n] = np.trapezoid(h_arr * u, s)
-        CumCatch[n] = CumCatch[n - 1] + dt * Catch[n - 1]
+        if schedule_event_times is not None:
+            Catch[n] = pulse_catch / dt
+            CumCatch[n] = CumCatch[n - 1] + dt * Catch[n]
+        else:
+            Catch[n] = np.trapezoid(h_arr * u, s)
+            CumCatch[n] = CumCatch[n - 1] + dt * Catch[n - 1]
 
         # store full space-time data (subsampled)
         if store_full and n % save_every == 0 and full_idx < n_saved:
@@ -198,6 +246,7 @@ def simulate_rd_fishing(
         "s_boundary": s_boundary,
         "h_in_schedule": h_in_schedule,
         "h_out_schedule": h_out_schedule,
+        "harvest_start_time": harvest_start_time,
     }
 
     if store_full:
@@ -236,6 +285,7 @@ def simulate_competing_rd_fishing(
     h1_out_schedule: np.ndarray | None = None,
     h2_in_schedule: np.ndarray | None = None,
     h2_out_schedule: np.ndarray | None = None,
+    harvest_start_time: float = 0.0,
 ) -> dict:
     """Simulate two-species competing reaction-diffusion PDE with EEZ fishing.
 
@@ -260,8 +310,10 @@ def simulate_competing_rd_fishing(
     snapshot_times : times at which to record spatial snapshots
     dt_safety      : Courant safety factor for diffusion stability
     store_full     : whether to store full space-time arrays
-    h1_in_schedule, h1_out_schedule : annual stochastic harvest for species 1
-    h2_in_schedule, h2_out_schedule : annual stochastic harvest for species 2
+    h1_in_schedule, h1_out_schedule : tau-year pulse schedule for species 1
+    h2_in_schedule, h2_out_schedule : tau-year pulse schedule for species 2
+    harvest_start_time : harvesting remains zero before this dimensional time;
+                         pulse tau-year 0 occurs at this time
 
     Returns
     -------
@@ -277,34 +329,50 @@ def simulate_competing_rd_fishing(
     ds = L / (N - 1)
     s = np.linspace(0.0, L, N)
 
-    # -- dt: diffusion stability AND reaction/fishing safety ---------------
     dt = dt_safety * ds**2 / (2.0 * max(D1, D2))
-    h1_in_max  = float(np.max(h1_in_schedule))  if h1_in_schedule  is not None else h1_in
+    h1_in_max = float(np.max(h1_in_schedule)) if h1_in_schedule is not None else h1_in
     h1_out_max = float(np.max(h1_out_schedule)) if h1_out_schedule is not None else h1_out
-    h2_in_max  = float(np.max(h2_in_schedule))  if h2_in_schedule  is not None else h2_in
+    h2_in_max = float(np.max(h2_in_schedule)) if h2_in_schedule is not None else h2_in
     h2_out_max = float(np.max(h2_out_schedule)) if h2_out_schedule is not None else h2_out
     max_rate = max(r1, r2, h1_in_max, h1_out_max, h2_in_max, h2_out_max, 1e-12)
     dt = min(dt, 0.2 / max_rate)
     nt = int(np.ceil(T_end / dt))
     dt = T_end / nt
 
-    # -- boundary index ----------------------------------------------------
     i_bnd = int(np.searchsorted(s, s_boundary, side="right")) - 1
 
-    # -- initial conditions ------------------------------------------------
     u = np.exp(-((s - u0_gaussian_center) / u0_gaussian_scale) ** 2)
     v = 0.8 * np.exp(-((s - v0_gaussian_center) / v0_gaussian_scale) ** 2)
 
-    # -- base fishing-rate arrays ------------------------------------------
     h1_base = np.empty(N)
     h1_base[: i_bnd + 1] = h1_in
     h1_base[i_bnd + 1 :] = h1_out
+    h1_zero = np.zeros(N)
 
     h2_base = np.empty(N)
     h2_base[: i_bnd + 1] = h2_in
     h2_base[i_bnd + 1 :] = h2_out
+    h2_zero = np.zeros(N)
 
-    # -- full space-time storage (subsampled) ------------------------------
+    if h1_in_schedule is not None:
+        h1_in_schedule = np.asarray(h1_in_schedule, dtype=float)
+        h1_out_schedule = np.asarray(h1_out_schedule, dtype=float)
+        h2_in_schedule = np.asarray(h2_in_schedule, dtype=float)
+        h2_out_schedule = np.asarray(h2_out_schedule, dtype=float)
+        if not (
+            h1_in_schedule.shape == h1_out_schedule.shape
+            == h2_in_schedule.shape == h2_out_schedule.shape
+        ):
+            raise ValueError("All two-species harvest schedules must have the same shape")
+        schedule_event_times = harvest_start_time + np.arange(h1_in_schedule.size, dtype=float) / r1
+        h1_in_pulse_survival = np.exp(-h1_in_schedule / r1)
+        h1_out_pulse_survival = np.exp(-h1_out_schedule / r1)
+        h2_in_pulse_survival = np.exp(-h2_in_schedule / r1)
+        h2_out_pulse_survival = np.exp(-h2_out_schedule / r1)
+        next_schedule_idx = 0
+    else:
+        schedule_event_times = None
+
     if store_full:
         save_every = max(1, nt // full_n_frames)
         n_saved = nt // save_every + 1
@@ -316,7 +384,6 @@ def simulate_competing_rd_fishing(
         t_full[0] = 0.0
         full_idx = 1
 
-    # -- storage -----------------------------------------------------------
     snap_set = set(snapshot_times)
     snapshots_u: dict[float, np.ndarray] = {}
     snapshots_v: dict[float, np.ndarray] = {}
@@ -325,20 +392,30 @@ def simulate_competing_rd_fishing(
         snapshots_v[0.0] = v.copy()
 
     time_arr = np.empty(nt + 1)
-    B1_in = np.empty(nt + 1);  B1_out = np.empty(nt + 1);  B1_tot = np.empty(nt + 1)
-    B2_in = np.empty(nt + 1);  B2_out = np.empty(nt + 1);  B2_tot = np.empty(nt + 1)
-    Catch1 = np.empty(nt + 1); CumCatch1 = np.empty(nt + 1)
-    Catch2 = np.empty(nt + 1); CumCatch2 = np.empty(nt + 1)
+    B1_in = np.empty(nt + 1)
+    B1_out = np.empty(nt + 1)
+    B1_tot = np.empty(nt + 1)
+    B2_in = np.empty(nt + 1)
+    B2_out = np.empty(nt + 1)
+    B2_tot = np.empty(nt + 1)
+    Catch1 = np.empty(nt + 1)
+    CumCatch1 = np.empty(nt + 1)
+    Catch2 = np.empty(nt + 1)
+    CumCatch2 = np.empty(nt + 1)
 
     time_arr[0] = 0.0
-    B1_in[0]  = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
+    B1_in[0] = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
     B1_out[0] = np.trapezoid(u[i_bnd:], s[i_bnd:])
     B1_tot[0] = np.trapezoid(u, s)
-    B2_in[0]  = np.trapezoid(v[: i_bnd + 1], s[: i_bnd + 1])
+    B2_in[0] = np.trapezoid(v[: i_bnd + 1], s[: i_bnd + 1])
     B2_out[0] = np.trapezoid(v[i_bnd:], s[i_bnd:])
     B2_tot[0] = np.trapezoid(v, s)
-    Catch1[0]    = np.trapezoid(h1_base * u, s)
-    Catch2[0]    = np.trapezoid(h2_base * v, s)
+    if schedule_event_times is None and harvest_start_time <= 0.0:
+        Catch1[0] = np.trapezoid(h1_base * u, s)
+        Catch2[0] = np.trapezoid(h2_base * v, s)
+    else:
+        Catch1[0] = 0.0
+        Catch2[0] = 0.0
     CumCatch1[0] = 0.0
     CumCatch2[0] = 0.0
 
@@ -346,43 +423,78 @@ def simulate_competing_rd_fishing(
     min_v = float(v.min())
     warned = False
 
-    # -- time stepping -----------------------------------------------------
-    for n in range(1, nt + 1):
-        t_now = n * dt
-
-        # resolve fishing rates for this time step
-        if h1_in_schedule is not None:
-            year = min(int(t_now), len(h1_in_schedule) - 1)
-            h1_arr = np.empty(N)
-            h1_arr[: i_bnd + 1] = h1_in_schedule[year]
-            h1_arr[i_bnd + 1 :] = h1_out_schedule[year]
-            h2_arr = np.empty(N)
-            h2_arr[: i_bnd + 1] = h2_in_schedule[year]
-            h2_arr[i_bnd + 1 :] = h2_out_schedule[year]
-        else:
-            h1_arr = h1_base
-            h2_arr = h2_base
+    def advance_state(
+        delta_t: float,
+        h1_arr: np.ndarray,
+        h2_arr: np.ndarray,
+        t_eval: float,
+    ) -> tuple[float, float]:
+        nonlocal u, v, warned
+        if delta_t <= 0.0:
+            return float(u.min()), float(v.min())
 
         lap_u = laplacian_neumann(u, ds)
         lap_v = laplacian_neumann(v, ds)
-
         du = r1 * u * (1.0 - (u + alpha * v) / K1) - h1_arr * u + D1 * lap_u
-        dv = r2 * v * (1.0 - (v + beta  * u) / K2) - h2_arr * v + D2 * lap_v
+        dv = r2 * v * (1.0 - (v + beta * u) / K2) - h2_arr * v + D2 * lap_v
 
-        u = u + dt * du
-        v = v + dt * dv
+        u = u + delta_t * du
+        v = v + delta_t * dv
 
-        # warn once on numerical negatives, then clip
         cur_min_u = float(u.min())
         cur_min_v = float(v.min())
         if (cur_min_u < -1e-10 or cur_min_v < -1e-10) and not warned:
             print(
-                f"  WARNING: negative values at t={t_now:.3f} "
-                f"(min u={cur_min_u:.3e}, min v={cur_min_v:.3e}) — clipping"
+                f"  WARNING: negative values at t={t_eval:.3f} "
+                f"(min u={cur_min_u:.3e}, min v={cur_min_v:.3e}) - clipping"
             )
             warned = True
         u = np.maximum(u, 0.0)
         v = np.maximum(v, 0.0)
+        return cur_min_u, cur_min_v
+
+    for n in range(1, nt + 1):
+        t_prev = (n - 1) * dt
+        t_now = n * dt
+        pulse_catch1 = 0.0
+        pulse_catch2 = 0.0
+
+        if schedule_event_times is not None:
+            t_step = t_prev
+            while (
+                next_schedule_idx < len(schedule_event_times)
+                and schedule_event_times[next_schedule_idx] <= t_now + 1e-12
+            ):
+                event_time = schedule_event_times[next_schedule_idx]
+                cur_min_u, cur_min_v = advance_state(event_time - t_step, h1_zero, h2_zero, event_time)
+                if cur_min_u < min_u:
+                    min_u = cur_min_u
+                if cur_min_v < min_v:
+                    min_v = cur_min_v
+                t_step = event_time
+
+                u_before = u.copy()
+                v_before = v.copy()
+                u[: i_bnd + 1] *= h1_in_pulse_survival[next_schedule_idx]
+                u[i_bnd + 1 :] *= h1_out_pulse_survival[next_schedule_idx]
+                v[: i_bnd + 1] *= h2_in_pulse_survival[next_schedule_idx]
+                v[i_bnd + 1 :] *= h2_out_pulse_survival[next_schedule_idx]
+                pulse_catch1 += np.trapezoid(u_before - u, s)
+                pulse_catch2 += np.trapezoid(v_before - v, s)
+                next_schedule_idx += 1
+
+            cur_min_u, cur_min_v = advance_state(t_now - t_step, h1_zero, h2_zero, t_now)
+            h1_arr = h1_zero
+            h2_arr = h2_zero
+        else:
+            t_fish = t_now - harvest_start_time
+            if t_fish < 0.0:
+                h1_arr = h1_zero
+                h2_arr = h2_zero
+            else:
+                h1_arr = h1_base
+                h2_arr = h2_base
+            cur_min_u, cur_min_v = advance_state(dt, h1_arr, h2_arr, t_now)
 
         if cur_min_u < min_u:
             min_u = cur_min_u
@@ -390,16 +502,22 @@ def simulate_competing_rd_fishing(
             min_v = cur_min_v
 
         time_arr[n] = t_now
-        B1_in[n]  = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
+        B1_in[n] = np.trapezoid(u[: i_bnd + 1], s[: i_bnd + 1])
         B1_out[n] = np.trapezoid(u[i_bnd:], s[i_bnd:])
         B1_tot[n] = np.trapezoid(u, s)
-        B2_in[n]  = np.trapezoid(v[: i_bnd + 1], s[: i_bnd + 1])
+        B2_in[n] = np.trapezoid(v[: i_bnd + 1], s[: i_bnd + 1])
         B2_out[n] = np.trapezoid(v[i_bnd:], s[i_bnd:])
         B2_tot[n] = np.trapezoid(v, s)
-        Catch1[n]    = np.trapezoid(h1_arr * u, s)
-        Catch2[n]    = np.trapezoid(h2_arr * v, s)
-        CumCatch1[n] = CumCatch1[n - 1] + dt * Catch1[n - 1]
-        CumCatch2[n] = CumCatch2[n - 1] + dt * Catch2[n - 1]
+        if schedule_event_times is not None:
+            Catch1[n] = pulse_catch1 / dt
+            Catch2[n] = pulse_catch2 / dt
+            CumCatch1[n] = CumCatch1[n - 1] + dt * Catch1[n]
+            CumCatch2[n] = CumCatch2[n - 1] + dt * Catch2[n]
+        else:
+            Catch1[n] = np.trapezoid(h1_arr * u, s)
+            Catch2[n] = np.trapezoid(h2_arr * v, s)
+            CumCatch1[n] = CumCatch1[n - 1] + dt * Catch1[n - 1]
+            CumCatch2[n] = CumCatch2[n - 1] + dt * Catch2[n - 1]
 
         if store_full and n % save_every == 0 and full_idx < n_saved:
             u_full[full_idx] = u.copy()
@@ -418,13 +536,23 @@ def simulate_competing_rd_fishing(
         "time": time_arr,
         "snapshots_u": snapshots_u,
         "snapshots_v": snapshots_v,
-        "B1_in": B1_in,  "B1_out": B1_out,  "B1_tot": B1_tot,
-        "B2_in": B2_in,  "B2_out": B2_out,  "B2_tot": B2_tot,
-        "Catch1": Catch1, "CumCatch1": CumCatch1,
-        "Catch2": Catch2, "CumCatch2": CumCatch2,
-        "ds": ds, "dt": dt, "nt": nt,
-        "min_u": min_u, "min_v": min_v,
+        "B1_in": B1_in,
+        "B1_out": B1_out,
+        "B1_tot": B1_tot,
+        "B2_in": B2_in,
+        "B2_out": B2_out,
+        "B2_tot": B2_tot,
+        "Catch1": Catch1,
+        "CumCatch1": CumCatch1,
+        "Catch2": Catch2,
+        "CumCatch2": CumCatch2,
+        "ds": ds,
+        "dt": dt,
+        "nt": nt,
+        "min_u": min_u,
+        "min_v": min_v,
         "s_boundary": s_boundary,
+        "harvest_start_time": harvest_start_time,
     }
 
     if store_full:
@@ -433,8 +561,6 @@ def simulate_competing_rd_fishing(
         result["t_full"] = t_full[:full_idx]
 
     return result
-
-
 def simulate_rd_fishing_3zone(
     L: float,
     N: int,

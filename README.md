@@ -179,8 +179,9 @@ neighbours.
 
 - **Initial conditions**: 1D runs typically start from Gaussian or uniform
   density profiles so that spreading and attractor behaviour are easy to
-  interpret. The 2D runs use localised blobs or noisy baselines, with optional
-  random seeds to make repeated runs reproducible.
+  interpret. Sections 5-6 document the explicit Gaussian blobs used in the
+  notebook's 2D runs; the standalone 2D solver module also supports noisy
+  baselines and random-blob initialisers.
 - **Time stepping**: all PDE solvers use explicit Euler time stepping. The time
   step is chosen from the most restrictive applicable stability constraint,
   combining diffusion limits with reaction/harvest limits where relevant, and is
@@ -361,6 +362,13 @@ time, so the PDE reduces to $dx/d\tau = x(1-x)$. The PDE spatial mean is overlai
 against the analytic logistic solution; maximum spatial deviation remains at
 machine epsilon.
 
+### Initial conditions used
+
+- **Uniform validation run:** $x(\xi,0) = 0.2$.
+- **Gaussian snapshot run:** $u(s,0) = \exp\!\bigl(-((s - 150)/50)^2\bigr)$,
+  equivalently $x(\xi,0) = \exp\!\bigl(-((\xi - 0.25)/0.0833)^2\bigr)$ on
+  $L = 600$ miles.
+
 ### Parameters
 
 | Parameter | Dimensional | Dimensionless |
@@ -399,6 +407,15 @@ $$\gamma(\xi) = \begin{cases}
 
 $$\gamma_{\rm MSY} = \tfrac{1}{2}, \qquad
 \gamma_{\rm MEY} = \tfrac{1}{2}\!\left(1 - \sqrt{1-f}\right), \quad f \sim \mathrm{Uniform}(0.80, 0.90)$$
+
+### Initial conditions used
+
+- **3C(i) baseline placement:** $u(s,0) = \exp\!\bigl(-((s - 150)/50)^2\bigr)$,
+  equivalently $x(\xi,0) = \exp\!\bigl(-((\xi - 0.25)/0.0833)^2\bigr)$.
+- **3C(ii):** same Gaussian width, moved to $s_0 = 400$ miles
+  ($\xi_0 = 2/3$).
+- **3C(iii):** same Gaussian width, centred on the EEZ boundary at
+  $s_0 = 200$ miles ($\xi_0 = 1/3$).
 
 ### Three policy scenarios
 
@@ -485,6 +502,15 @@ conditions apply at both boundaries for each species.
 **Coexistence condition:** stable coexistence requires $\alpha_{12}\alpha_{21} < 1$;
 competitive exclusion occurs when $\alpha_{12}\alpha_{21} > 1$.
 
+### Initial conditions used in the notebook
+
+- **Baseline two-species run:** species 1 starts from
+  $u(s,0) = \exp\!\bigl(-((s - 150)/50)^2\bigr)$ and species 2 from
+  $v(s,0) = 0.8\,\exp\!\bigl(-((s - 200)/60)^2\bigr)$.
+- **Placement variants:** Section 4C(ii) keeps species 1 at $s_0 = 150$ miles
+  and moves species 2 to $s_0 = 400$ miles; Section 4C(iii) places both
+  species at $s_0 = 200$ miles, keeping the same Gaussian widths.
+
 ### Outputs
 
 - Density snapshots for each species at selected times (species 1 solid, species 2 dashed).
@@ -534,6 +560,9 @@ Three Gaussian ICs placed in each zone:
 | A(ii)  | $s = 100$ miles ($\xi = 1/6$)  | EEZ |
 | A(iii) | $s = 400$ miles ($\xi = 2/3$)  | International |
 
+All Section A runs use $u(s,0) = \exp\!\bigl(-((s - s_0)/50)^2\bigr)$, with
+only the centre $s_0$ changing between sub-cases.
+
 All three converge to the same long-run attractor, confirming spatial equilibrium is
 independent of initial position.
 
@@ -547,6 +576,10 @@ placement configurations:
 | B(i)   | 6 miles (territorial) | 100 miles (EEZ) |
 | B(ii)  | 100 miles (EEZ) | 400 miles (international) |
 | B(iii) | 200 miles (EEZ/intl boundary) | 200 miles (EEZ/intl boundary) |
+
+Section B reuses the Section 4 Gaussian family, changing only the centres
+listed above. Species 1 keeps width 50 miles in all cases; species 2 uses
+width 50 miles in B(i)-B(ii) and 60 miles in B(iii).
 
 Each species carries independent stochastic harvest schedules per zone.
 
@@ -600,6 +633,21 @@ $\tau = T_{\rm end}$ exactly.
 | **A2** | 0 | $\gamma_{\rm MSY}$ | EEZ protected, offshore fished at MSY |
 | **A3** | $\gamma_{\rm MEY}$ | $\gamma_{\rm MSY}$ + pulse | Pulse fishing event in international waters |
 
+### Initial conditions used in the notebook
+
+The main A0-A3 runs start from a single centred Gaussian blob:
+
+$$u(x,y,0) = K\exp\!\left(-\frac{(x - 298.5)^2 + (y - 298.5)^2}{2 \cdot 40^2}\right)$$
+
+on a $597 \times 597$ mile domain ($n_x = n_y = 200$, $\Delta x = \Delta y = 3$).
+
+For the A2 IC-position study the same Gaussian is used with $x_0 = 298.5$
+miles, $\sigma = 40$ miles, and three offshore centres:
+
+- `IC_in`: $y_0 = 100$ miles
+- `IC_bnd`: $y_0 = 200$ miles
+- `IC_out`: $y_0 = 350$ miles
+
 ### Outputs
 
 **Main scenarios (A0–A3):**
@@ -638,6 +686,15 @@ $$\Delta\tau \le \min\!\left(\frac{0.2\,\min(\Delta\xi^2,\Delta\eta^2)}{4\max(\d
 | **B0** | $\alpha_{12}\alpha_{21} < 1$ | Stable coexistence |
 | **B1** | $\alpha_{12}\alpha_{21} > 1$, species 2 stronger | Competitive exclusion — species 2 dominates |
 | **B2** | Asymmetric diffusion ($\delta_1 \neq \delta_2$) | Spatial segregation between species |
+
+### Initial conditions used in the notebook
+
+Section 6 keeps both species co-located at the domain centre, with
+$\sigma = 40$ miles:
+
+$$u(x,y,0) = 0.8\,K_1\exp\!\left(-\frac{(x - 298.5)^2 + (y - 298.5)^2}{2 \cdot 40^2}\right)$$
+
+$$v(x,y,0) = 0.8\,K_2\exp\!\left(-\frac{(x - 298.5)^2 + (y - 298.5)^2}{2 \cdot 40^2}\right)$$
 
 ### Outputs
 
